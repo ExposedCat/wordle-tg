@@ -18,6 +18,7 @@ const COMMANDS = [
   { command: 'play', description: 'Start a new game' },
   { command: 'w', description: 'Guess a 5-letter word' },
   { command: 'auto', description: 'Toggle bare-word guessing' },
+  { command: 'cleanup', description: 'Toggle old board cleanup' },
   { command: 'board', description: 'Show the current board' },
   { command: 'giveup', description: 'End the game or open tournament' },
   { command: 'stats', description: 'Your stats in this chat' },

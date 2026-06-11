@@ -206,6 +206,19 @@ describe('tournaments', () => {
     expect(svc.settings(CHAT).tournamentMaxFails).toBe(5);
   });
 
+  it('defaults board cleanup to off in chat settings', () => {
+    expect(svc.settings(CHAT).cleanup).toBe(false);
+  });
+
+  it('remembers last board messages per chat topic', () => {
+    svc.saveBoardMessageIds(CHAT, null, [11, 12, 13]);
+    svc.saveBoardMessageIds(CHAT, 123, [21, 22]);
+
+    expect(svc.boardMessageIds(CHAT, null)).toEqual([11, 12, 13]);
+    expect(svc.boardMessageIds(CHAT, 123)).toEqual([21, 22]);
+    expect(svc.boardMessageIds(CHAT, 456)).toEqual([]);
+  });
+
   it('requires at least two players to start', () => {
     const t0 = svc.createTournament(CHAT, 2, A)!;
 

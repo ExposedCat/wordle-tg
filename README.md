@@ -21,6 +21,7 @@ A Wordle bot for Telegram groups. Random 5-letter word, 6 tries, the whole chat 
 | `/play` | Start a new game (random word, 6 tries, shared board) |
 | `/w WORD` | Submit a guess |
 | `/auto` | Toggle bare-word guessing in this chat |
+| `/cleanup` | Toggle removal of the previous board, keyboard, and status message |
 | `/board` | Show the current board (and tournament standings) |
 | `/giveup` | Abandon the game and reveal the word, or cancel an open tournament |
 | `/stats` | Your stats in this chat |
@@ -41,6 +42,7 @@ A Wordle bot for Telegram groups. Random 5-letter word, 6 tries, the whole chat 
 ## Settings (`/settings`, per chat)
 
 - **Bare-word guessing** (default **off**) — toggle with `/auto`. When on, any message that is a valid 5-letter word counts as a guess. Unknown words get a "not in my dictionary" notice.
+- **Cleanup** (default **off**) — toggle with `/cleanup`. When on, each newly posted board removes the previous board sticker, keyboard sticker, and status message in the same chat/topic.
 - **Board** — classic Wordle board as a WebP sticker, followed by a centered WebP keyboard sticker with absent letters hidden. Result/status text is sent afterward only when needed:
   ```
   T R A C E

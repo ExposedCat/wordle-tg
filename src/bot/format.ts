@@ -73,6 +73,7 @@ Tournament
 
 Misc
 /auto · guess without /w ${toggleIcon(s.bareWord)}
+/cleanup · remove old boards ${toggleIcon(s.cleanup)}
 /usepack NAME · custom emoji pack ${toggleIcon(s.emojiPack !== null)}`;
 }
 

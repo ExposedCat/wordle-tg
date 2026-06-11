@@ -14,12 +14,14 @@ import {
   createGame,
   createTournament,
   getActiveGame,
+  getBoardMessageIds,
   getDuel,
   getOpenTournament,
   getSettings,
   getTournament,
   recentWords,
   recordUsedWord,
+  saveBoardMessageIds,
   saveSettings,
   updateDuel,
   updateGame,
@@ -95,6 +97,14 @@ export class GameService {
 
   saveSettings(chatId: number, s: ChatSettings): void {
     saveSettings(this.db, chatId, s);
+  }
+
+  boardMessageIds(chatId: number, messageThreadId: number | null): number[] {
+    return getBoardMessageIds(this.db, chatId, messageThreadId);
+  }
+
+  saveBoardMessageIds(chatId: number, messageThreadId: number | null, messageIds: number[]): void {
+    saveBoardMessageIds(this.db, chatId, messageThreadId, messageIds);
   }
 
   activeGame(chatId: number): GameRow | null {

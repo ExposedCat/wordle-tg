@@ -15,6 +15,7 @@ export type Difficulty = 'normal' | 'hard' | 'superhard';
 
 export interface ChatSettings {
   bareWord: boolean;
+  cleanup: boolean;
   difficulty: Difficulty;
   creativity: CreativitySettings;
   emojiPack: EmojiPackConfig | null;
@@ -24,6 +25,7 @@ export interface ChatSettings {
 
 export const DEFAULT_SETTINGS: ChatSettings = {
   bareWord: false,
+  cleanup: false,
   difficulty: 'normal',
   creativity: { enabled: false, configured: false, mode: 'time', seconds: 3600, count: 20 },
   emojiPack: null,
@@ -170,6 +172,13 @@ export function openDb(path: string): Database.Database {
       challenger TEXT NOT NULL,
       opponent TEXT
     );
+    CREATE TABLE IF NOT EXISTS board_messages (
+      chat_id INTEGER NOT NULL,
+      thread_id INTEGER NOT NULL,
+      message_ids TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (chat_id, thread_id)
+    );
     CREATE TABLE IF NOT EXISTS stats (
       chat_id INTEGER NOT NULL,
       user_id INTEGER NOT NULL,
@@ -230,6 +239,7 @@ export function getSettings(db: Database.Database, chatId: number): ChatSettings
   return {
     ...structuredClone(DEFAULT_SETTINGS),
     ...parsed,
+    cleanup: parsed.cleanup === true,
     creativity,
     emojiPack: isEmojiPackConfig(parsed.emojiPack) ? parsed.emojiPack : null,
     tournamentMaxFails:
@@ -246,6 +256,36 @@ export function saveSettings(db: Database.Database, chatId: number, s: ChatSetti
     `INSERT INTO chats (chat_id, settings) VALUES (?, ?)
      ON CONFLICT(chat_id) DO UPDATE SET settings = excluded.settings`
   ).run(chatId, JSON.stringify(s));
+}
+
+// ---------- board cleanup state ----------
+
+function boardThreadKey(messageThreadId: number | null): number {
+  return messageThreadId ?? 0;
+}
+
+export function getBoardMessageIds(db: Database.Database, chatId: number, messageThreadId: number | null): number[] {
+  const row = db
+    .prepare('SELECT message_ids FROM board_messages WHERE chat_id = ? AND thread_id = ?')
+    .get(chatId, boardThreadKey(messageThreadId)) as { message_ids: string } | undefined;
+  if (!row) return [];
+
+  const parsed = JSON.parse(row.message_ids);
+  return Array.isArray(parsed) ? parsed.filter((id): id is number => Number.isInteger(id) && id > 0) : [];
+}
+
+export function saveBoardMessageIds(
+  db: Database.Database,
+  chatId: number,
+  messageThreadId: number | null,
+  messageIds: number[]
+): void {
+  db.prepare(
+    `INSERT INTO board_messages (chat_id, thread_id, message_ids, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(chat_id, thread_id) DO UPDATE SET
+       message_ids = excluded.message_ids,
+       updated_at = excluded.updated_at`
+  ).run(chatId, boardThreadKey(messageThreadId), JSON.stringify(messageIds), Date.now());
 }
 
 // ---------- games ----------

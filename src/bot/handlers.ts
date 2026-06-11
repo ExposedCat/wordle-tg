@@ -165,24 +165,31 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     caption: string,
     boardText?: string,
     opts: StateMessageOptions = {}
-  ): Promise<void> {
+  ): Promise<number | null> {
     const textParts = [caption, boardText].filter((part): part is string => Boolean(part));
     const footerParts = [opts.footer].filter((part): part is string => Boolean(part));
     const messageParts = [...textParts, ...footerParts, opts.footerHtml].filter(Boolean);
 
-    if (messageParts.length === 0) return;
+    if (messageParts.length === 0) return null;
 
     if (opts.footerHtml || opts.captionHtml) {
       const escaped = textParts.map((part, index) => (index === 0 && opts.captionHtml ? part : escapeHtml(part)));
       const escapedFooter = footerParts.map(escapeHtml);
-      await ctx.api.sendMessage(chatId, [...escaped, ...escapedFooter, opts.footerHtml].filter(Boolean).join('\n\n'), {
+      const message = await ctx.api.sendMessage(chatId, [...escaped, ...escapedFooter, opts.footerHtml].filter(Boolean).join('\n\n'), {
         ...threadOptions(ctx),
         parse_mode: 'HTML',
       });
-      return;
+      return message.message_id;
     }
 
-    await ctx.api.sendMessage(chatId, [...textParts, ...footerParts].join('\n\n'), threadOptions(ctx));
+    const message = await ctx.api.sendMessage(chatId, [...textParts, ...footerParts].join('\n\n'), threadOptions(ctx));
+    return message.message_id;
+  }
+
+  async function deleteMessages(ctx: Context, chatId: number, messageIds: number[]): Promise<void> {
+    for (const messageId of messageIds) {
+      await ctx.api.deleteMessage(chatId, messageId).catch(() => {});
+    }
   }
 
   async function sendBoard(
@@ -192,15 +199,26 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     caption: string,
     opts: StateMessageOptions = {}
   ): Promise<void> {
-    await ctx.api.sendSticker(
+    const threadId = messageThreadId(ctx) ?? null;
+    const settings = svc.settings(chatId);
+    const previousMessageIds = settings.cleanup ? svc.boardMessageIds(chatId, threadId) : [];
+    const sentMessageIds: number[] = [];
+
+    const boardMessage = await ctx.api.sendSticker(
       chatId,
       new InputFile(renderBoardSticker(game), 'board.webp'),
       threadOptions(ctx)
     );
+    sentMessageIds.push(boardMessage.message_id);
     if (!opts.hideKeyboard) {
-      await ctx.api.sendSticker(chatId, new InputFile(renderKeyboardSticker(game), 'keyboard.webp'), threadOptions(ctx));
+      const keyboardMessage = await ctx.api.sendSticker(chatId, new InputFile(renderKeyboardSticker(game), 'keyboard.webp'), threadOptions(ctx));
+      sentMessageIds.push(keyboardMessage.message_id);
     }
-    await sendStateMessage(ctx, chatId, caption, undefined, opts);
+    const stateMessageId = await sendStateMessage(ctx, chatId, caption, undefined, opts);
+    if (stateMessageId !== null) sentMessageIds.push(stateMessageId);
+
+    svc.saveBoardMessageIds(chatId, threadId, sentMessageIds);
+    await deleteMessages(ctx, chatId, previousMessageIds);
   }
 
   async function handleGuess(ctx: Context, word: string, opts: { silentNoGame?: boolean } = {}): Promise<void> {
@@ -365,6 +383,14 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     svc.saveSettings(ctx.chat.id, s);
     const text = `Guess without /w ${s.bareWord ? 'enabled' : 'disabled'}\n${autoGuessInstruction(s.bareWord)}`;
     await ctx.reply(s.bareWord ? tickText(text) : forbiddenText(text), { parse_mode: 'HTML' });
+  });
+
+  bot.command('cleanup', async (ctx) => {
+    const s = svc.settings(ctx.chat.id);
+    s.cleanup = !s.cleanup;
+    svc.saveSettings(ctx.chat.id, s);
+    const text = `Cleanup ${s.cleanup ? 'enabled' : 'disabled'}\nPrevious boards will ${s.cleanup ? '' : 'not '}be removed when a new board is posted`;
+    await ctx.reply(s.cleanup ? tickText(text) : forbiddenText(text), { parse_mode: 'HTML' });
   });
 
   bot.command('usepack', async (ctx) => {
