@@ -177,6 +177,13 @@ describe('tournaments', () => {
     expect(pointsForGuessNumber(6)).toBe(1);
   });
 
+  it('requires at least two players to start', () => {
+    const t0 = svc.createTournament(CHAT, 2, A)!;
+
+    expect(svc.startTournament(t0.id)).toBe('too_few');
+    expect(svc.openTournament(CHAT)?.status).toBe('joining');
+  });
+
   it('full 2-round tournament with turn enforcement and scoring', () => {
     const t0 = svc.createTournament(CHAT, 2, A)!;
     expect(t0.players).toHaveLength(1);
@@ -189,6 +196,9 @@ describe('tournaments', () => {
     forceAnswer(game.id, 'water');
 
     // round 1, order A → B
+    expect(svc.submitGuess(CHAT, C, 'crane').type).toBe('ignored');
+    expect(svc.submitGuess(CHAT, C, 'xxxxx').type).toBe('ignored');
+    expect(svc.activeGame(CHAT)!.guesses).toHaveLength(0);
     expect(svc.submitGuess(CHAT, B, 'crane').type).toBe('not_your_turn');
     expect(svc.submitGuess(CHAT, B, 'xxxxx').type).toBe('not_your_turn');
     expect(svc.submitGuess(CHAT, A, 'crane').type).toBe('accepted');

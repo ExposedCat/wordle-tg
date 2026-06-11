@@ -15,7 +15,6 @@ import {
   modeHelpText,
   parseCreativityValue,
   settingsText,
-  standingsText,
 	statsText,
 } from './format.js';
 
@@ -23,6 +22,13 @@ const PEOPLE_EMOJI = '<tg-emoji emoji-id="5942877472163892475">👥</tg-emoji>';
 const JOIN_EMOJI_ID = '5920090136627908485';
 const QUIT_EMOJI_ID = '5922712343011135025';
 const START_EMOJI_ID = '5994378304751145264';
+const NOT_SO_FAST = '<tg-emoji emoji-id="5776213190387961618">⏳</tg-emoji>';
+const OUT_OF_GUESSES = '<tg-emoji emoji-id="5897962422169243693">💀</tg-emoji>';
+const CROWN = '<tg-emoji emoji-id="5807868868886009920">👑</tg-emoji>';
+const TOURNAMENT_FINISHED = '<tg-emoji emoji-id="5942913498349571809">🏆</tg-emoji>';
+const NOT_ALLOWED = '<tg-emoji emoji-id="5924719252379537729">🤔</tg-emoji>';
+const TOURNAMENT_CANCELLED = '<tg-emoji emoji-id="5870734657384877785">🏳️</tg-emoji>';
+const NO_ACTIVE = '<tg-emoji emoji-id="5927052244254986343">❕</tg-emoji>';
 
 type StyledInlineButton = {
 	text: string;
@@ -52,17 +58,17 @@ function playerNameLinkHtml(player: { userId: number; userName: string; firstNam
   return `<a href="tg://user?id=${player.userId}">${label}</a>`;
 }
 
-function compactStandingsHtml(t: TournamentRow): string {
+function tournamentStandingsHtml(t: TournamentRow): string {
   const rankLabels = ['🥇', '🥈', '🥉'];
   return [...t.players]
     .map((p) => ({ p, pts: t.scores[String(p.userId)] ?? 0 }))
     .sort((a, b) => b.pts - a.pts)
-    .map((r, i) => `${rankLabels[i] ?? String(i + 1)} ${playerNameLinkHtml(r.p)} · ${r.pts}`)
+    .map((r, i) => `${rankLabels[i] ?? `${i + 1}.`} ${playerNameLinkHtml(r.p)} · ${r.pts}`)
     .join('\n');
 }
 
 function roundLabelHtml(t: TournamentRow): string {
-  return `🏆 Round ${t.current_round}/${t.rounds}\n\n${compactStandingsHtml(t)}`;
+  return `🏆 Round ${t.current_round}/${t.rounds}\n\n${tournamentStandingsHtml(t)}`;
 }
 
 function currentTournamentPlayer(t: TournamentRow) {
@@ -117,6 +123,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   type StateMessageOptions = {
     footer?: string;
     footerHtml?: string;
+    captionHtml?: boolean;
     hideKeyboard?: boolean;
   };
 
@@ -133,8 +140,8 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
 
     if (messageParts.length === 0) return;
 
-    if (opts.footerHtml) {
-      const escaped = textParts.map(escapeHtml);
+    if (opts.footerHtml || opts.captionHtml) {
+      const escaped = textParts.map((part, index) => (index === 0 && opts.captionHtml ? part : escapeHtml(part)));
       const escapedFooter = footerParts.map(escapeHtml);
       await ctx.api.sendMessage(chatId, [...escaped, ...escapedFooter, opts.footerHtml].filter(Boolean).join('\n\n'), {
         parse_mode: 'HTML',
@@ -166,10 +173,10 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
 
     switch (out.type) {
       case 'no_game':
-        if (!opts.silentNoGame) await ctx.reply('No game running here. Send /play to start one!');
+        if (!opts.silentNoGame) await ctx.reply(`${NO_ACTIVE} No game running here. Send /play to start one!`, { parse_mode: 'HTML' });
         return;
       case 'not_a_word':
-        await ctx.reply(`🤔 "${out.word.toUpperCase()}" is not in my dictionary.`);
+        await ctx.reply(`${NOT_ALLOWED} "${escapeHtml(out.word.toUpperCase())}" is not allowed`, { parse_mode: 'HTML' });
         return;
       case 'already_guessed':
         {
@@ -186,8 +193,12 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
           parse_mode: 'HTML',
         });
         return;
+      case 'ignored':
+        return;
       case 'not_your_turn':
-        await ctx.reply(`⏳ Not so fast — it's ${out.currentPlayer.userName}'s turn.`);
+        await ctx.reply(`${NOT_SO_FAST} Not so fast — it's ${playerNameLinkHtml(out.currentPlayer)}'s turn.`, {
+          parse_mode: 'HTML',
+        });
         return;
     }
 
@@ -195,20 +206,21 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const lines: string[] = [];
 
     if (lost) {
-      if (duel) lines.push(`💀 Out of guesses! The word stays secret until your opponent finishes.`);
-      else lines.push(`💀 Out of guesses! The word was ${game.answer.toUpperCase()}.`);
+      if (duel) lines.push(`${OUT_OF_GUESSES} Out of guesses! The word stays secret until your opponent finishes.`);
+      else lines.push(`${OUT_OF_GUESSES} Out of guesses! The word was ${game.answer.toUpperCase()}.`);
     }
 
     if (tournament) {
       const { t, pointsAwarded, roundEnded, tournamentEnded, nextGame, nextPlayer, winners } = tournament;
       if (solved) lines.push(`🎉 ${user.name} got it in ${guessNumber}/${MAX_GUESSES} +${pointsAwarded}`);
       const nextUpFooter = !roundEnded && nextPlayer ? `Next up ${playerMentionHtml(nextPlayer)}` : undefined;
-      await sendBoard(ctx, chatId, game, lines.join('\n'), { footerHtml: nextUpFooter, hideKeyboard: solved });
+      await sendBoard(ctx, chatId, game, lines.join('\n'), { footerHtml: nextUpFooter, captionHtml: lost, hideKeyboard: solved });
 
       if (tournamentEnded) {
-        const winnerNames = winners.map((w) => w.userName).join(' & ');
+        const winnerNames = winners.map(playerNameLinkHtml).join(' & ');
         await ctx.reply(
-          `🏆 Tournament over!\n\n${standingsText(t)}\n\n👑 Winner${winners.length > 1 ? 's' : ''}: ${winnerNames}`
+          `${TOURNAMENT_FINISHED} Tournament finished!\n\n${tournamentStandingsHtml(t)}\n\n${CROWN} Winner${winners.length > 1 ? 's' : ''}: ${winnerNames}`,
+          { parse_mode: 'HTML' }
         );
       } else if (roundEnded && nextGame && nextPlayer) {
         await sendBoard(ctx, chatId, nextGame, '', { footerHtml: tournamentStatusHtml(t), hideKeyboard: true });
@@ -221,7 +233,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     }
 
     if (duel) {
-      await sendBoard(ctx, chatId, game, lines.join('\n'), { hideKeyboard: solved });
+      await sendBoard(ctx, chatId, game, lines.join('\n'), { captionHtml: lost, hideKeyboard: solved });
       const { d, finished, bothDone } = duel;
       if (finished && !bothDone) {
         await ctx.reply('⚔️ Your board is done! I will announce the result once your opponent finishes.');
@@ -239,7 +251,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
       return;
     }
 
-    await sendBoard(ctx, chatId, game, lines.join('\n'), { hideKeyboard: solved });
+    await sendBoard(ctx, chatId, game, lines.join('\n'), { captionHtml: lost, hideKeyboard: solved });
   }
 
   async function setDifficulty(ctx: Context, difficulty: 'normal' | 'hard' | 'superhard'): Promise<void> {
@@ -364,7 +376,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const t = svc.openTournament(chatId);
     if (!game) {
       if (t && t.status === 'joining') return void (await ctx.reply(lobbyText(t), { parse_mode: 'HTML', reply_markup: lobbyKeyboard(t) }));
-      return void (await ctx.reply('No active game. Send /play to start one!'));
+      return void (await ctx.reply(`${NO_ACTIVE} No active game. Send /play to start one!`, { parse_mode: 'HTML' }));
     }
     if (t && t.status === 'active') {
       await sendBoard(ctx, chatId, game, '', { footerHtml: tournamentStatusHtml(t), hideKeyboard: true });
@@ -375,7 +387,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
 
   bot.command('giveup', async (ctx) => {
     const res = svc.giveUp(ctx.chat.id);
-    if (!res) return void (await ctx.reply('No active game to give up.'));
+    if (!res) return void (await ctx.reply(`${NO_ACTIVE} No active game to give up.`, { parse_mode: 'HTML' }));
     let msg = giveUpText(res.answer);
     await ctx.reply(msg, { parse_mode: 'HTML' });
   });
@@ -452,15 +464,15 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const arg = (ctx.match ?? '').trim().toLowerCase();
     if (arg === 'cancel') {
       const res = svc.cancelTournament(chatId, ctx.from!.id);
-      if (!res) return void (await ctx.reply('No open tournament here.'));
+      if (!res) return void (await ctx.reply(`${NO_ACTIVE} No open tournament here.`, { parse_mode: 'HTML' }));
       if (res === 'not_allowed') return void (await ctx.reply('Only the tournament creator can cancel it.'));
-      return void (await ctx.reply('🏳️ Tournament cancelled.'));
+      return void (await ctx.reply(`${TOURNAMENT_CANCELLED} Tournament cancelled.`, { parse_mode: 'HTML' }));
     }
     const existing = svc.openTournament(chatId);
     if (existing) {
       if (existing.status === 'joining')
         return void (await ctx.reply(lobbyText(existing), { parse_mode: 'HTML', reply_markup: lobbyKeyboard(existing) }));
-      return void (await ctx.reply(`🏆 Tournament in progress — round ${existing.current_round}/${existing.rounds}.\nStandings:\n${standingsText(existing)}`));
+      return void (await ctx.reply(tournamentStandingsHtml(existing), { parse_mode: 'HTML' }));
     }
     const parsedRounds = parseInt(arg, 10);
     const rounds = Number.isFinite(parsedRounds) && parsedRounds >= 1 && parsedRounds <= 25 ? parsedRounds : 0;
@@ -507,7 +519,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     if (!t || t.id !== id) return void (await ctx.answerCallbackQuery('This tournament is no longer open.'));
     if (t.created_by !== ctx.from.id) return void (await ctx.answerCallbackQuery('Only the creator can start it.'));
     const res = svc.startTournament(id);
-    if (res === 'too_few') return void (await ctx.answerCallbackQuery('Need at least 1 player!'));
+    if (res === 'too_few') return void (await ctx.answerCallbackQuery('Need at least 2 players!'));
     if (!res) return void (await ctx.answerCallbackQuery('Could not start the tournament.'));
     await ctx.answerCallbackQuery('Game on!');
     await ctx.editMessageText(lobbyText(res.t), { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });

@@ -45,7 +45,7 @@ describe('hardModeViolationText', () => {
 });
 
 describe('alreadyGuessedText', () => {
-  it('uses the custom already-guessed emoji and fallback scored letters', () => {
+  it('uses fallback scored letters', () => {
     expect(alreadyGuessedText('trace', 'water', null)).toBe(
       '🟨T 🟨R 🟨A ⬛C 🟨E was already guessed'
     );
@@ -54,7 +54,7 @@ describe('alreadyGuessedText', () => {
   it('uses custom emoji tiles for the scored word', () => {
     const text = alreadyGuessedText('water', 'water', pack());
 
-    expect(text).toContain('5845943483382110702');
+    expect(text).not.toContain('5845943483382110702');
     expect(text).toContain('W-green-id');
     expect(text).toContain('A-green-id');
     expect(text).toContain('T-green-id');

@@ -23,7 +23,6 @@ export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
 
 const TICK = '<tg-emoji emoji-id="5825794181183836432">✅</tg-emoji>';
 const FORBIDDEN = '<tg-emoji emoji-id="5872829476143894491">🚫</tg-emoji>';
-const ALREADY_GUESSED = '<tg-emoji emoji-id="5845943483382110702">♻️</tg-emoji>';
 const A_YELLOW = '<tg-emoji emoji-id="5280718893806034581">🔠</tg-emoji>';
 const A_GREEN = '<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji>';
 const A_DARK = '<tg-emoji emoji-id="5282737683053980256">🔠</tg-emoji>';
@@ -85,7 +84,7 @@ export function alreadyGuessedText(word: string, answer: string, emojiPack: Emoj
     .map((status, index) => formatTileLetter(word[index], tileStatusColor(status), emojiPack))
     .join(' ');
 
-  return [emojiPack ? ALREADY_GUESSED : null, `${tiles} was already guessed`].filter(Boolean).join(' ');
+  return `${tiles} was already guessed`;
 }
 
 export function giveUpText(answer: string): string {

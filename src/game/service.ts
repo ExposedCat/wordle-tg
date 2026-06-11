@@ -53,6 +53,7 @@ export type GuessOutcome =
   | { type: 'creativity_blocked'; word: string }
   | { type: 'hard_mode_violation'; word: string; violation: HardModeViolation; superHard: boolean }
   | { type: 'already_guessed'; word: string }
+  | { type: 'ignored' }
   | { type: 'not_your_turn'; currentPlayer: TournamentPlayer }
   | {
       type: 'accepted';
@@ -131,6 +132,7 @@ export class GameService {
     if (game.kind === 'tournament' && game.tournament_id) {
       tournament = getTournament(this.db, game.tournament_id);
       if (tournament && tournament.status === 'active') {
+        if (!tournament.players.some((p) => p.userId === user.id)) return { type: 'ignored' };
         const order = roundOrder(tournament.players, tournament.current_round);
         const current = order[tournament.turn_idx % order.length];
         if (current.userId !== user.id) return { type: 'not_your_turn', currentPlayer: current };
@@ -221,7 +223,7 @@ export class GameService {
   startTournament(tournamentId: number): { t: TournamentRow; game: GameRow; firstPlayer: TournamentPlayer } | 'too_few' | null {
     const t = getTournament(this.db, tournamentId);
     if (!t || t.status !== 'joining') return null;
-    if (t.players.length < 1) return 'too_few';
+    if (t.players.length < 2) return 'too_few';
     if (t.rounds < 1) t.rounds = t.players.length;
     t.status = 'active';
     t.current_round = 1;
