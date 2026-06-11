@@ -4,6 +4,7 @@ import {
   alreadyGuessedText,
   giveUpText,
   hardModeViolationText,
+  HELP_TEXT,
   humanTurnTime,
   parseTournamentTimerValue,
   standingsText,
@@ -18,6 +19,14 @@ function pack(): EmojiPackConfig {
     tiles: Object.fromEntries(orderedTileKeys().map((key) => [key, `${key}-id`])) as EmojiPackConfig['tiles'],
   };
 }
+
+describe('HELP_TEXT', () => {
+  it('ends with linked source code attribution', () => {
+    expect(HELP_TEXT).toContain('<tg-emoji emoji-id="5884343982816759327">💻</tg-emoji>');
+    expect(HELP_TEXT).toContain('<a href="https://github.com/ExposedCat/wordle-tg">Source Code</a>');
+    expect(HELP_TEXT).toContain('<a href="https://github.com/Argotoss/telewordle">telewordle</a>');
+  });
+});
 
 describe('hardModeViolationText', () => {
   it('formats required hard-mode hints as colored letters', () => {

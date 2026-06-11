@@ -20,7 +20,9 @@ export const HELP_TEXT = `<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoj
 /en /ru · select word language
 /length N · select 3-10 letter words
 
-<tg-emoji emoji-id="5879813604068298387">❗</tg-emoji> See /settings for cool modes and preferences!`;
+<tg-emoji emoji-id="5879813604068298387">❗</tg-emoji> See /settings for cool modes and preferences!
+
+<tg-emoji emoji-id="5884343982816759327">💻</tg-emoji> <a href="https://github.com/ExposedCat/wordle-tg">Source Code</a> (forked <a href="https://github.com/Argotoss/telewordle">telewordle</a>)`;
 
 export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
   normal: '😎 normal',
