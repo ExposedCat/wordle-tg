@@ -28,6 +28,7 @@ import {
   updateTournament,
 } from '../db.js';
 import { hardModeViolation, type HardModeViolation } from '../engine/hardmode.js';
+import { type WordLanguage } from '../engine/language.js';
 import { scoreGuess, TileStatus } from '../engine/score.js';
 import { isValidWord, pickAnswer } from '../engine/words.js';
 
@@ -99,6 +100,13 @@ export class GameService {
     saveSettings(this.db, chatId, s);
   }
 
+  setLanguage(chatId: number, language: WordLanguage): ChatSettings {
+    const s = getSettings(this.db, chatId);
+    s.language = language;
+    saveSettings(this.db, chatId, s);
+    return s;
+  }
+
   boardMessageIds(chatId: number, messageThreadId: number | null): number[] {
     return getBoardMessageIds(this.db, chatId, messageThreadId);
   }
@@ -119,8 +127,8 @@ export class GameService {
   startGame(chatId: number): GameRow | null {
     if (getActiveGame(this.db, chatId)) return null;
     const s = getSettings(this.db, chatId);
-    const answer = pickAnswer(recentWords(this.db, chatId, s.creativity));
-    return createGame(this.db, chatId, answer, 'normal');
+    const answer = pickAnswer(s.language, recentWords(this.db, chatId, s.creativity));
+    return createGame(this.db, chatId, answer, s.language, 'normal');
   }
 
   /** Abort the current game, or cancel an open tournament lobby. Returns the revealed answer when there is one. */
@@ -175,7 +183,7 @@ export class GameService {
         ? this.recordTournamentRejectedAttempt(tournament, currentTournamentPlayer, settings)
         : undefined;
 
-    if (!isValidWord(word)) return { type: 'not_a_word', word, rejectStatus: tournamentReject() };
+    if (!isValidWord(word, game.language)) return { type: 'not_a_word', word, rejectStatus: tournamentReject() };
     if (game.guesses.some((g) => g.word === word)) return { type: 'already_guessed', word };
 
     const isDuel = game.kind === 'duel';
@@ -289,8 +297,8 @@ export class GameService {
 
   private newTournamentGame(t: TournamentRow): GameRow {
     const s = getSettings(this.db, t.chat_id);
-    const answer = pickAnswer(recentWords(this.db, t.chat_id, s.creativity));
-    return createGame(this.db, t.chat_id, answer, 'tournament', { tournamentId: t.id });
+    const answer = pickAnswer(s.language, recentWords(this.db, t.chat_id, s.creativity));
+    return createGame(this.db, t.chat_id, answer, s.language, 'tournament', { tournamentId: t.id });
   }
 
   private recordTournamentRejectedAttempt(
@@ -378,7 +386,7 @@ export class GameService {
   /** Create a duel; challenger plays in their private chat once they press Play. */
   createDuel(chatId: number, challenger: UserRef, messageThreadId: number | null = null): DuelRow {
     const s = getSettings(this.db, chatId);
-    const answer = pickAnswer(recentWords(this.db, chatId, s.creativity));
+    const answer = pickAnswer(s.language, recentWords(this.db, chatId, s.creativity));
     return createDuel(this.db, chatId, messageThreadId, answer, {
       userId: challenger.id,
       userName: challenger.name,
@@ -412,7 +420,8 @@ export class GameService {
       d.status = 'active';
       updateDuel(this.db, d);
     }
-    const game = createGame(this.db, privateChatId, d.answer, 'duel', { duelId: d.id });
+    const language = isValidWord(d.answer, 'ru') ? 'ru' : 'en';
+    const game = createGame(this.db, privateChatId, d.answer, language, 'duel', { duelId: d.id });
     return { d: getDuel(this.db, duelId)!, game };
   }
 

@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { Bot, Context, InlineKeyboard, InputFile } from 'grammy';
 import { GameRow, TournamentRow } from '../db.js';
+import { isGuessText, LANGUAGE_LABELS, type WordLanguage } from '../engine/language.js';
 import { GameService, MAX_GUESSES, roundOrder, type TournamentRejectStatus, type UserRef } from '../game/service.js';
 import { emojiPackFromStickers, escapeHtml, packNameCandidates } from '../render/emoji-pack.js';
 import { renderBoardSticker, renderKeyboardSticker } from '../render/image.js';
@@ -352,6 +353,14 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     return bareWord ? 'Send a word to guess' : 'Use /w [WORD] to guess';
   }
 
+  async function setLanguage(ctx: Context, language: WordLanguage): Promise<void> {
+    const chatId = ctx.chat!.id;
+    svc.setLanguage(chatId, language);
+    const active = svc.activeGame(chatId);
+    const suffix = active && active.language !== language ? `\nCurrent game stays ${LANGUAGE_LABELS[active.language]}.` : '';
+    await ctx.reply(tickText(`${LANGUAGE_LABELS[language]} selected${suffix}`), { parse_mode: 'HTML' });
+  }
+
   // ---------- commands ----------
 
   async function replyHelp(ctx: Context): Promise<void> {
@@ -376,6 +385,9 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   });
 
   bot.command('help', (ctx) => replyHelp(ctx));
+
+  bot.command('en', (ctx) => setLanguage(ctx, 'en'));
+  bot.command('ru', (ctx) => setLanguage(ctx, 'ru'));
 
   bot.command('auto', async (ctx) => {
     const s = svc.settings(ctx.chat.id);
@@ -435,8 +447,8 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
 
   bot.command('w', async (ctx) => {
     const word = (ctx.match ?? '').trim();
-    if (!/^[a-zA-Z]{5}$/.test(word)) {
-      return void (await ctx.reply('Usage: /w WORD (a 5-letter word, e.g. /w crane)'));
+    if (!isGuessText(word)) {
+      return void (await ctx.reply('Usage: /w WORD (a 5-letter word)'));
     }
     await handleGuess(ctx, word);
   });
@@ -634,7 +646,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   bot.on('message:text', async (ctx) => {
     const text = ctx.message.text.trim();
     if (text.startsWith('/')) return;
-    if (!/^[a-zA-Z]{5}$/.test(text)) return;
+    if (!isGuessText(text)) return;
     if (!svc.settings(ctx.chat.id).bareWord) return;
     await handleGuess(ctx, text, { silentNoGame: true });
   });

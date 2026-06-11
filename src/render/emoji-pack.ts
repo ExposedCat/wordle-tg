@@ -1,4 +1,5 @@
 import type { GameRow } from '../db.js';
+import { LANGUAGE_KEY_ROWS } from '../engine/language.js';
 import { KeyStatus, keyboardStatus } from '../engine/score.js';
 
 export type TileColor = 'gray' | 'yellow' | 'green' | 'dark-gray';
@@ -17,8 +18,6 @@ export const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 export const COLORS: TileColor[] = ['gray', 'yellow', 'green', 'dark-gray'];
 export const EMPTY_TILE_KEY: TileKey = 'empty-dark-gray';
 export const FALLBACK_EMOJI = '🔠';
-
-const KEY_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
 
 export function tileKey(letter: string, color: TileColor): TileKey {
   return `${letter.toUpperCase()}-${color}`;
@@ -72,7 +71,7 @@ export function renderKeyboardList(game: GameRow, emojiPack: EmojiPackConfig | n
     game.guesses.map((g) => g.word)
   );
 
-  return KEY_ROWS.map((row) => {
+  return LANGUAGE_KEY_ROWS[game.language].map((row) => {
     return row
       .split('')
       .flatMap((letter) => {
@@ -97,7 +96,7 @@ function formatKeyboardLetter(letter: string, status: Exclude<KeyStatus, 'absent
 export function formatTileLetter(letter: string, color: TileColor, emojiPack: EmojiPackConfig | null): string {
   if (emojiPack) {
     const id = emojiPack.tiles[tileKey(letter, color)];
-    return `<tg-emoji emoji-id="${id}">${FALLBACK_EMOJI}</tg-emoji>`;
+    if (id) return `<tg-emoji emoji-id="${id}">${FALLBACK_EMOJI}</tg-emoji>`;
   }
 
   const upper = letter.toUpperCase();

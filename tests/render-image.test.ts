@@ -3,11 +3,12 @@ import { createCanvas, loadImage } from '@napi-rs/canvas';
 import type { GameRow } from '../src/db.js';
 import { renderBoardSticker, renderKeyboardSticker } from '../src/render/image.js';
 
-function game(answer: string, guesses: string[]): GameRow {
+function game(answer: string, guesses: string[], language: GameRow['language'] = 'en'): GameRow {
   return {
     id: 1,
     chat_id: 1,
     answer,
+    language,
     status: 'active',
     kind: 'normal',
     guesses: guesses.map((word, index) => ({ word, userId: 1, userName: 'Ada', ts: index })),
@@ -45,6 +46,10 @@ describe('sticker rendering', () => {
 
     expectWebp(renderBoardSticker(row));
     expectWebp(renderKeyboardSticker(row));
+  });
+
+  it('renders Russian keyboard stickers', () => {
+    expectWebp(renderKeyboardSticker(game('здесь', ['когда'], 'ru')));
   });
 
   it('keeps the board sticker at full Telegram sticker size as the keyboard shrinks', () => {

@@ -11,6 +11,7 @@ const game: GameRow = {
   id: 1,
   chat_id: 1,
   answer: 'water',
+  language: 'en',
   status: 'active',
   kind: 'normal',
   guesses: [mk('sport', 1, 'A'), mk('trace', 1, 'A'), mk('react', 1, 'A'), mk('water', 1, 'A')],

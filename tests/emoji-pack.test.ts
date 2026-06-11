@@ -7,6 +7,7 @@ function game(answer: string, guesses: string[]): GameRow {
     id: 1,
     chat_id: 1,
     answer,
+    language: 'en',
     status: 'active',
     kind: 'normal',
     guesses: guesses.map((word, index) => ({ word, userId: 1, userName: 'Ada', ts: index })),

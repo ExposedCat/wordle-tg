@@ -1,4 +1,5 @@
 import { GameRow } from '../db.js';
+import { LANGUAGE_KEY_ROWS } from '../engine/language.js';
 import { keyboardStatus, scoreGuess, TileStatus } from '../engine/score.js';
 import { MAX_GUESSES } from '../game/service.js';
 
@@ -43,7 +44,7 @@ export function keyboardLine(game: GameRow): string {
   const greens: string[] = [];
   const yellows: string[] = [];
   const unused: string[] = [];
-  for (const c of 'abcdefghijklmnopqrstuvwxyz') {
+  for (const c of LANGUAGE_KEY_ROWS[game.language].join('').toLowerCase()) {
     const s = status.get(c);
     const C = c.toUpperCase();
     if (s === 'correct') greens.push(C);

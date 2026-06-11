@@ -1,5 +1,6 @@
 import { createCanvas, type Canvas } from '@napi-rs/canvas';
 import { GameRow } from '../db.js';
+import { LANGUAGE_KEY_ROWS } from '../engine/language.js';
 import { KeyStatus, keyboardStatus, scoreGuess, TileStatus } from '../engine/score.js';
 import { MAX_GUESSES } from '../game/service.js';
 
@@ -19,7 +20,6 @@ const TILE_GAP = 6;
 const BOARD_COLS = 5;
 const PAD = 24;
 
-const KEY_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
 const KEY_W = 42;
 const KEY_H = 54;
 const KEY_GAP = 6;
@@ -103,6 +103,7 @@ export function renderBoardSticker(game: GameRow): Buffer {
 
 export function renderKeyboardSticker(game: GameRow): Buffer {
   const rows = visibleKeyboardRows(game);
+  const keyW = keyboardKeyWidth(rows);
 
   const totalH = rows.length * KEY_H + Math.max(0, rows.length - 1) * KEY_ROW_GAP;
   const sticker = createCanvas(STICKER_WIDTH, totalH + STICKER_PAD_Y * 2);
@@ -111,19 +112,19 @@ export function renderKeyboardSticker(game: GameRow): Buffer {
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `bold 26px ${FONT}`;
+  ctx.font = `bold ${keyW < KEY_W ? 24 : 26}px ${FONT}`;
 
   for (const row of rows) {
-    const rowW = keyboardRowWidth(row.length);
+    const rowW = keyboardRowWidth(row.length, keyW);
     let x = Math.round((STICKER_WIDTH - rowW) / 2);
 
     for (const key of row) {
       ctx.fillStyle = keyboardFill(key.status);
-      roundRect(ctx, x, y, KEY_W, KEY_H, 6);
+      roundRect(ctx, x, y, keyW, KEY_H, 6);
       ctx.fill();
       ctx.fillStyle = COLORS.text;
-      ctx.fillText(key.letter, x + KEY_W / 2, y + KEY_H / 2 + 1);
-      x += KEY_W + KEY_GAP;
+      ctx.fillText(key.letter, x + keyW / 2, y + KEY_H / 2 + 1);
+      x += keyW + KEY_GAP;
     }
 
     y += KEY_H + KEY_ROW_GAP;
@@ -138,7 +139,7 @@ function visibleKeyboardRows(game: GameRow): VisibleKey[][] {
     game.guesses.map((g) => g.word)
   );
 
-  return KEY_ROWS.map((row) =>
+  return LANGUAGE_KEY_ROWS[game.language].map((row) =>
     row.split('').flatMap((letter): VisibleKey[] => {
       const keyStatus = status.get(letter.toLowerCase()) ?? 'unused';
       if (keyStatus === 'absent') return [];
@@ -147,8 +148,13 @@ function visibleKeyboardRows(game: GameRow): VisibleKey[][] {
   ).filter((row) => row.length > 0);
 }
 
-function keyboardRowWidth(keyCount: number): number {
-  return keyCount * KEY_W + Math.max(0, keyCount - 1) * KEY_GAP;
+function keyboardKeyWidth(rows: VisibleKey[][]): number {
+  const maxKeys = Math.max(1, ...rows.map((row) => row.length));
+  return Math.min(KEY_W, Math.floor((STICKER_WIDTH - (maxKeys - 1) * KEY_GAP) / maxKeys));
+}
+
+function keyboardRowWidth(keyCount: number, keyW: number): number {
+  return keyCount * keyW + Math.max(0, keyCount - 1) * KEY_GAP;
 }
 
 function encodeSticker(canvas: Canvas): Buffer {

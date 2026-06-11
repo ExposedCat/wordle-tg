@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { DEFAULT_LANGUAGE, isWordLanguage, type WordLanguage } from './engine/language.js';
 import { isEmojiPackConfig, type EmojiPackConfig } from './render/emoji-pack.js';
 
 export interface CreativitySettings {
@@ -14,6 +15,7 @@ export interface CreativitySettings {
 export type Difficulty = 'normal' | 'hard' | 'superhard';
 
 export interface ChatSettings {
+  language: WordLanguage;
   bareWord: boolean;
   cleanup: boolean;
   difficulty: Difficulty;
@@ -24,6 +26,7 @@ export interface ChatSettings {
 }
 
 export const DEFAULT_SETTINGS: ChatSettings = {
+  language: DEFAULT_LANGUAGE,
   bareWord: false,
   cleanup: false,
   difficulty: 'normal',
@@ -46,6 +49,7 @@ export interface GameRow {
   id: number;
   chat_id: number;
   answer: string;
+  language: WordLanguage;
   status: GameStatus;
   kind: GameKind;
   guesses: GuessEntry[];
@@ -135,6 +139,7 @@ export function openDb(path: string): Database.Database {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chat_id INTEGER NOT NULL,
       answer TEXT NOT NULL,
+      language TEXT NOT NULL DEFAULT 'en',
       status TEXT NOT NULL DEFAULT 'active',
       kind TEXT NOT NULL DEFAULT 'normal',
       guesses TEXT NOT NULL DEFAULT '[]',
@@ -214,6 +219,10 @@ export function openDb(path: string): Database.Database {
   if (!duelColumns.some((column) => column.name === 'message_thread_id')) {
     db.prepare('ALTER TABLE duels ADD COLUMN message_thread_id INTEGER').run();
   }
+  const gameColumns = db.prepare('PRAGMA table_info(games)').all() as { name: string }[];
+  if (!gameColumns.some((column) => column.name === 'language')) {
+    db.prepare("ALTER TABLE games ADD COLUMN language TEXT NOT NULL DEFAULT 'en'").run();
+  }
   return db;
 }
 
@@ -239,6 +248,7 @@ export function getSettings(db: Database.Database, chatId: number): ChatSettings
   return {
     ...structuredClone(DEFAULT_SETTINGS),
     ...parsed,
+    language: isWordLanguage(parsed.language) ? parsed.language : DEFAULT_SETTINGS.language,
     cleanup: parsed.cleanup === true,
     creativity,
     emojiPack: isEmojiPackConfig(parsed.emojiPack) ? parsed.emojiPack : null,
@@ -291,7 +301,11 @@ export function saveBoardMessageIds(
 // ---------- games ----------
 
 function parseGame(row: any): GameRow {
-  return { ...row, guesses: JSON.parse(row.guesses) };
+  return {
+    ...row,
+    language: isWordLanguage(row.language) ? row.language : DEFAULT_LANGUAGE,
+    guesses: JSON.parse(row.guesses),
+  };
 }
 
 export function getActiveGame(db: Database.Database, chatId: number): GameRow | null {
@@ -310,16 +324,17 @@ export function createGame(
   db: Database.Database,
   chatId: number,
   answer: string,
+  language: WordLanguage,
   kind: GameKind = 'normal',
   opts: { tournamentId?: number; duelId?: number } = {}
 ): GameRow {
   const now = Date.now();
   const info = db
     .prepare(
-      `INSERT INTO games (chat_id, answer, kind, started_at, tournament_id, duel_id)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO games (chat_id, answer, language, kind, started_at, tournament_id, duel_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(chatId, answer, kind, now, opts.tournamentId ?? null, opts.duelId ?? null);
+    .run(chatId, answer, language, kind, now, opts.tournamentId ?? null, opts.duelId ?? null);
   return getGame(db, Number(info.lastInsertRowid))!;
 }
 

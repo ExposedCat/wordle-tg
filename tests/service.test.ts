@@ -1,7 +1,8 @@
 import Database from 'better-sqlite3';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDb } from '../src/db.js';
-import { ANSWERS, isValidWord } from '../src/engine/words.js';
+import { isGuessText } from '../src/engine/language.js';
+import { ANSWERS, ANSWERS_RU, isValidWord } from '../src/engine/words.js';
 import { GameService, MAX_GUESSES, pointsForGuessNumber, roundOrder } from '../src/game/service.js';
 
 const CHAT = -100500;
@@ -58,6 +59,29 @@ describe('basic game flow', () => {
     const [w1] = wrongWords(game.answer, 1);
     svc.submitGuess(CHAT, A, w1);
     expect(svc.submitGuess(CHAT, B, w1).type).toBe('already_guessed');
+  });
+
+  it('uses the selected language for new games and guesses', () => {
+    const s = svc.settings(CHAT);
+    s.language = 'ru';
+    svc.saveSettings(CHAT, s);
+
+    const game = svc.startGame(CHAT)!;
+    expect(game.language).toBe('ru');
+    expect(isValidWord(game.answer, 'ru')).toBe(true);
+    expect(svc.submitGuess(CHAT, A, 'crane').type).toBe('not_a_word');
+
+    forceAnswer(game.id, 'здесь');
+    expect(svc.submitGuess(CHAT, A, 'здесь').type).toBe('accepted');
+  });
+
+  it('keeps an active game on the language it started with', () => {
+    const game = svc.startGame(CHAT)!;
+    svc.setLanguage(CHAT, 'ru');
+
+    const [w1] = wrongWords(game.answer, 1);
+    expect(svc.submitGuess(CHAT, A, w1).type).toBe('accepted');
+    expect(svc.activeGame(CHAT)?.language).toBe('en');
   });
 
   it('loses after 6 wrong guesses and resets streak', () => {
@@ -483,11 +507,24 @@ describe('duels', () => {
 });
 
 describe('word list sanity', () => {
+  it('accepts English and Cyrillic 5-letter guess text for /w and /auto', () => {
+    expect(isGuessText('crane')).toBe(true);
+    expect(isGuessText('ЗДЕСЬ')).toBe(true);
+    expect(isGuessText('здесь')).toBe(true);
+    expect(isGuessText('дом')).toBe(false);
+    expect(isGuessText('12345')).toBe(false);
+  });
+
   it('has the expected shape', () => {
     expect(ANSWERS.length).toBeGreaterThan(2000);
+    expect(ANSWERS_RU.length).toBeGreaterThan(2000);
     for (const w of ['water', 'crane', 'trace', 'abbey', 'eater', 'racer']) {
       expect(isValidWord(w)).toBe(true);
     }
+    for (const w of ['здесь', 'когда', 'жизнь']) {
+      expect(isValidWord(w, 'ru')).toBe(true);
+    }
     expect(isValidWord('zzzzz')).toBe(false);
+    expect(isValidWord('crane', 'ru')).toBe(false);
   });
 });
