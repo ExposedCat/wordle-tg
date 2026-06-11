@@ -4,13 +4,15 @@ import {
   alreadyGuessedText,
   giveUpText,
   hardModeViolationText,
-  HELP_TEXT,
+  helpText,
   humanTurnTime,
+  oneshotHelpText,
   parseTournamentTimerValue,
+  preferencesHelpText,
   standingsText,
   statsText,
 } from '../src/bot/format.js';
-import type { StatsRow, TournamentRow } from '../src/db.js';
+import { DEFAULT_SETTINGS, type StatsRow, type TournamentRow } from '../src/db.js';
 import { EmojiPackConfig, orderedTileKeys } from '../src/render/emoji-pack.js';
 
 function pack(): EmojiPackConfig {
@@ -20,11 +22,53 @@ function pack(): EmojiPackConfig {
   };
 }
 
-describe('HELP_TEXT', () => {
+describe('helpText', () => {
+  it('formats the section index with current state', () => {
+    const text = helpText(DEFAULT_SETTINGS);
+
+    expect(text).toContain('<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji> Wordle /wordle_help');
+    expect(text).toContain('<tg-emoji emoji-id="5936130851635990622">🎯</tg-emoji> One-shot /oneshot_help');
+    expect(text).toContain('<tg-emoji emoji-id="6005695599410679642">🔠</tg-emoji> Guess Mode /mode_help');
+    expect(text).toContain('<tg-emoji emoji-id="5877410604225924969">✨</tg-emoji> Creativity /creativity_help');
+    expect(text).toContain('<tg-emoji emoji-id="5942877472163892475">👥</tg-emoji> Multiplayer /multiplayer_help');
+    expect(text).toContain('<tg-emoji emoji-id="5778575233422200567">👤</tg-emoji> Stats /stats_help');
+    expect(text).toContain('<tg-emoji emoji-id="5877260593903177342">⚙️</tg-emoji> Preferences /preferences_help');
+    expect(text).not.toContain('/wordle · start game');
+    expect(text).not.toContain('/profile · your stats');
+    expect(text).not.toContain('English, 5 letters');
+    expect(text).not.toContain('mode:');
+    expect(text).not.toContain('current:');
+  });
+
   it('ends with linked source code attribution', () => {
-    expect(HELP_TEXT).toContain('<tg-emoji emoji-id="5884343982816759327">💻</tg-emoji>');
-    expect(HELP_TEXT).toContain('<a href="https://github.com/ExposedCat/wordle-tg">Source Code</a>');
-    expect(HELP_TEXT).toContain('<a href="https://github.com/Argotoss/telewordle">telewordle</a>');
+    const text = helpText(DEFAULT_SETTINGS);
+
+    expect(text).toContain('<tg-emoji emoji-id="5884343982816759327">💻</tg-emoji>');
+    expect(text).toContain('<a href="https://github.com/ExposedCat/wordle-tg">Source Code</a>');
+    expect(text).toContain('<a href="https://github.com/Argotoss/telewordle">telewordle</a>');
+  });
+});
+
+describe('oneshotHelpText', () => {
+  it('formats difficulty patterns with colored sample tiles', () => {
+    expect(oneshotHelpText(DEFAULT_SETTINGS)).toContain('easy · 🟩A 2 + 🟨A 1');
+    expect(oneshotHelpText(DEFAULT_SETTINGS)).toContain('<tg-emoji emoji-id="5825794181183836432">✅</tg-emoji> normal · 🟩A 1 + 🟨A 2');
+    expect(oneshotHelpText(DEFAULT_SETTINGS)).toContain('\nexpert · 🟨A 2');
+  });
+
+  it('uses configured custom emoji tiles for difficulty patterns', () => {
+    const text = oneshotHelpText({ ...DEFAULT_SETTINGS, emojiPack: pack() });
+
+    expect(text).toContain('A-green-id');
+    expect(text).toContain('A-yellow-id');
+    expect(text).not.toContain('🟩A 2');
+  });
+});
+
+describe('preferencesHelpText', () => {
+  it('shows the configured emoji pack name', () => {
+    expect(preferencesHelpText({ ...DEFAULT_SETTINGS, emojiPack: pack() })).toContain('/usepack NAME · test_pack');
+    expect(preferencesHelpText(DEFAULT_SETTINGS)).toContain('/usepack NAME · off');
   });
 });
 

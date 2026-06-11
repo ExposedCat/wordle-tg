@@ -9,22 +9,26 @@ import { describeWordMeaning, hasOpenAIKey, roastBadGuess } from '../llm.js';
 import { emojiPackFromStickers, escapeHtml, packNameCandidates } from '../render/emoji-pack.js';
 import { renderBoardSticker, renderCompareSticker, renderKeyboardSticker } from '../render/image.js';
 import {
-  HELP_TEXT,
   alreadyGuessedText,
   answerMeaningText,
   answerMeaningSentence,
   creativityHelpText,
   giveUpText,
   hardModeViolationText,
+  helpText,
   humanDuration,
   humanMs,
   humanTurnTime,
   modeHelpText,
+  multiplayerHelpText,
+  oneshotHelpText,
   parseCreativityValue,
   parseTournamentTimerValue,
+  preferencesHelpText,
   rankLabelHtml,
-  settingsText,
+  statsHelpText,
 	statsText,
+  wordleHelpText,
 } from './format.js';
 
 const PEOPLE_EMOJI = '<tg-emoji emoji-id="5942877472163892475">👥</tg-emoji>';
@@ -583,7 +587,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   // ---------- commands ----------
 
   async function replyHelp(ctx: Context): Promise<void> {
-    await ctx.reply(HELP_TEXT, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+    await ctx.reply(helpText(svc.settings(ctx.chat!.id)), { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
   }
 
   bot.command('start', async (ctx) => {
@@ -881,19 +885,15 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   bot.command('normal', async (ctx) => setDifficulty(ctx, 'normal'));
   bot.command('hard', async (ctx) => setDifficulty(ctx, 'hard'));
   bot.command('superhard', async (ctx) => setDifficulty(ctx, 'superhard'));
+  bot.command('wordle_help', async (ctx) => ctx.reply(wordleHelpText(), { parse_mode: 'HTML' }));
+  bot.command('oneshot_help', async (ctx) => ctx.reply(oneshotHelpText(svc.settings(ctx.chat.id)), { parse_mode: 'HTML' }));
   bot.command('mode_help', async (ctx) => ctx.reply(modeHelpText(svc.settings(ctx.chat.id)), { parse_mode: 'HTML' }));
   bot.command('creativity_help', async (ctx) =>
     ctx.reply(creativityHelpText(svc.settings(ctx.chat.id)), { parse_mode: 'HTML' })
   );
-
-  bot.command('settings', async (ctx) => {
-    const chatId = ctx.chat.id;
-    const args = (ctx.match ?? '').trim().toLowerCase();
-    if (args) {
-      return void (await ctx.reply('Usage: /settings'));
-    }
-    await ctx.reply(settingsText(svc.settings(chatId)), { parse_mode: 'HTML' });
-  });
+  bot.command('multiplayer_help', async (ctx) => ctx.reply(multiplayerHelpText(svc.settings(ctx.chat.id)), { parse_mode: 'HTML' }));
+  bot.command('stats_help', async (ctx) => ctx.reply(statsHelpText(), { parse_mode: 'HTML' }));
+  bot.command('preferences_help', async (ctx) => ctx.reply(preferencesHelpText(svc.settings(ctx.chat.id)), { parse_mode: 'HTML' }));
 
   bot.command('fails', async (ctx) => {
     const chatId = ctx.chat.id;

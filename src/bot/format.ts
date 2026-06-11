@@ -5,25 +5,24 @@ import { scoreGuess, type TileStatus } from '../engine/score.js';
 import { roundOrder } from '../game/service.js';
 import { escapeHtml, formatTileLetter, type EmojiPackConfig, type TileColor } from '../render/emoji-pack.js';
 
-export const HELP_TEXT = `<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji> Wordle
-
-/wordle · start a new game
-/personal · start your own game
-/daily · start today's daily word
-/oneshot [MODE] · two-row puzzle
-/round [N] · start a tournament
-/w [WORD] · guess a word
-/board · see current game board
-/stop · end the current game
-/profile · see your stats
-/compare · compare with reply/name
-/duel · challenge another player
-/en /ru · select word language
-/length N · select 3-10 letter words
-
-<tg-emoji emoji-id="5879813604068298387">❗</tg-emoji> See /settings for cool modes and preferences!
-
-<tg-emoji emoji-id="5884343982816759327">💻</tg-emoji> <a href="https://github.com/ExposedCat/wordle-tg">Source Code</a> (forked <a href="https://github.com/Argotoss/telewordle">telewordle</a>)`;
+const WORDLE_ICON = '<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji>';
+const ONESHOT_ICON = '<tg-emoji emoji-id="5936130851635990622">🎯</tg-emoji>';
+const CREATIVITY_ICON = '<tg-emoji emoji-id="5877410604225924969">✨</tg-emoji>';
+const MULTIPLAYER_ICON = '<tg-emoji emoji-id="5942877472163892475">👥</tg-emoji>';
+const DUELS_ICON = '<tg-emoji emoji-id="5944940516754853337">⚔️</tg-emoji>';
+const STATS_ICON = '<tg-emoji emoji-id="5778575233422200567">👤</tg-emoji>';
+const PREFERENCES_ICON = '<tg-emoji emoji-id="5877260593903177342">⚙️</tg-emoji>';
+const LANGUAGE_ICON = '<tg-emoji emoji-id="5778184941154078090">🌐</tg-emoji>';
+const LENGTH_ICON = '<tg-emoji emoji-id="6008135256798927387">🏆</tg-emoji>';
+const GUESS_MODE_ICON = '<tg-emoji emoji-id="6005695599410679642">🔠</tg-emoji>';
+const REJECTED_GUESSES_ICON = '<tg-emoji emoji-id="5879813604068298387">❗</tg-emoji>';
+const TIMER_ICON = '<tg-emoji emoji-id="5960751816084820359">⏱</tg-emoji>';
+const AUTO_ICON = '<tg-emoji emoji-id="5881986900469748194">🤖</tg-emoji>';
+const CLEANUP_ICON = '<tg-emoji emoji-id="5879937509579820068">🧹</tg-emoji>';
+const ROAST_ICON = '<tg-emoji emoji-id="5924666978332578279">🔥</tg-emoji>';
+const EMOJI_PACK_ICON = '<tg-emoji emoji-id="5784982040432611567">😀</tg-emoji>';
+const SOURCE_CODE =
+  '<tg-emoji emoji-id="5884343982816759327">💻</tg-emoji> <a href="https://github.com/ExposedCat/wordle-tg">Source Code</a> (forked <a href="https://github.com/Argotoss/telewordle">telewordle</a>)';
 
 export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
   normal: '😎 normal',
@@ -65,6 +64,50 @@ export function rankLabelHtml(rank: number): string {
   return NUMBER_LABELS[rank - 1] ?? `${rank}.`;
 }
 
+function onOff(enabled: boolean): string {
+  return enabled ? 'on' : 'off';
+}
+
+function creativityValue(s: ChatSettings): string {
+  if (!s.creativity.configured || !s.creativity.enabled) return 'off';
+  return s.creativity.mode === 'time' ? `on, ${humanDuration(s.creativity.seconds)}` : `on, ${s.creativity.count} words`;
+}
+
+function difficultyValue(difficulty: Difficulty): string {
+  return difficulty === 'superhard' ? 'super hard' : difficulty;
+}
+
+function oneshotPatternText(green: number, yellow: number, emojiPack: EmojiPackConfig | null): string {
+  const parts: string[] = [];
+  if (green > 0) parts.push(`${formatTileLetter('A', 'green', emojiPack)} ${green}`);
+  if (yellow > 0) parts.push(`${formatTileLetter('A', 'yellow', emojiPack)} ${yellow}`);
+  return parts.join(' + ');
+}
+
+function rejectedGuessesValue(s: ChatSettings): string {
+  return s.tournamentMaxFails === null ? 'off' : `${s.tournamentMaxFails}`;
+}
+
+function timerValue(s: ChatSettings): string {
+  return s.tournamentTurnSeconds === null ? 'off' : humanTurnTime(s.tournamentTurnSeconds);
+}
+
+function emojiPackValue(s: ChatSettings): string {
+  return s.emojiPack?.name ?? 'off';
+}
+
+export function helpText(_s: ChatSettings): string {
+  return `${WORDLE_ICON} Wordle /wordle_help
+${ONESHOT_ICON} One-shot /oneshot_help
+${GUESS_MODE_ICON} Guess Mode /mode_help
+${CREATIVITY_ICON} Creativity /creativity_help
+${MULTIPLAYER_ICON} Multiplayer /multiplayer_help
+${STATS_ICON} Stats /stats_help
+${PREFERENCES_ICON} Preferences /preferences_help
+
+${SOURCE_CODE}`;
+}
+
 export function describeCreativity(s: ChatSettings): string {
   if (!s.creativity.configured) return 'off — set with /creativity 30m or /creativity 15w';
   if (!s.creativity.enabled) return 'off';
@@ -73,40 +116,51 @@ export function describeCreativity(s: ChatSettings): string {
     : `on — the last ${s.creativity.count} words are banned`;
 }
 
-export function settingsText(s: ChatSettings): string {
-  return `Language
-/en · English${tick(s.language === 'en')}
-/ru · Russian${tick(s.language === 'ru')}
-/length N · word length: ${s.wordLength}
+export function wordleHelpText(): string {
+  return `${WORDLE_ICON} Wordle
 
-Mode /mode_help
-/normal · normal mode${tick(s.difficulty === 'normal')}
-/hard · hard mode${tick(s.difficulty === 'hard')}
-/superhard · super hard mode${tick(s.difficulty === 'superhard')}
+/wordle
+Starts a shared chat game.
 
-Creativity /creativity_help
-/creativity · toggle creativity ${toggleIcon(s.creativity.enabled)}
-/creativity 30m · time frame${tick(s.creativity.configured && s.creativity.mode === 'time')}
-/creativity 15w · word frame${tick(s.creativity.configured && s.creativity.mode === 'count')}
+/daily
+Starts today's shared daily word.
 
-Tournament
-/fails N · max rejected guesses per turn: ${s.tournamentMaxFails === null ? 'off' : s.tournamentMaxFails}
-/fails off · unlimited
-/timer 90s · max time per turn: ${s.tournamentTurnSeconds === null ? 'off' : humanTurnTime(s.tournamentTurnSeconds)}
-/timer · disable turn timer
+/personal
+Starts your own game inside the chat.
 
-Misc
-/oneshot [easy|normal|hard|expert] · two-row puzzle: ${ONESHOT_DIFFICULTY_LABEL[s.oneshotDifficulty]}
-/auto · guess without /w ${toggleIcon(s.bareWord)}
-/cleanup · remove old boards ${toggleIcon(s.cleanup)}
-/roast · roast below-average guesses ${toggleIcon(s.roast)}
-/usepack NAME · custom emoji pack ${toggleIcon(s.emojiPack !== null)}
+/w WORD
+Submits a guess.
 
-Current language: ${LANGUAGE_LABELS[s.language]} · ${s.wordLength} letters`;
+/board
+Reposts the current board.
+
+/stop
+Ends the current game.
+
+A chat can have one shared active game at a time. Personal games run separately for each player.`;
+}
+
+export function oneshotHelpText(s: ChatSettings): string {
+  return `${ONESHOT_ICON} One-shot
+
+/oneshot easy|normal|hard|expert · ${ONESHOT_DIFFICULTY_LABEL[s.oneshotDifficulty]}
+Sets the chat's one-shot difficulty.
+
+/oneshot
+First row is a random clue word. You get one guess for row two.
+
+${lineTick(s.oneshotDifficulty === 'easy')}easy · ${oneshotPatternText(2, 1, s.emojiPack)}
+${lineTick(s.oneshotDifficulty === 'normal')}normal · ${oneshotPatternText(1, 2, s.emojiPack)}
+${lineTick(s.oneshotDifficulty === 'hard')}hard · ${oneshotPatternText(1, 1, s.emojiPack)}
+${lineTick(s.oneshotDifficulty === 'expert')}expert · ${oneshotPatternText(0, 2, s.emojiPack)}
+
+One-shot games do not affect stats.`;
 }
 
 export function modeHelpText(s: ChatSettings): string {
-  return `Normal /normal${tick(s.difficulty === 'normal')}
+  return `${GUESS_MODE_ICON} Guess Mode
+
+Normal /normal${tick(s.difficulty === 'normal')}
 Classic Wordle experience.
 
 Hard /hard${tick(s.difficulty === 'hard')}
@@ -158,18 +212,84 @@ export function giveUpText(answer: string, meaning?: string): string {
 }
 
 export function creativityHelpText(s: ChatSettings): string {
-  return `Toggle /creativity ${toggleIcon(s.creativity.enabled)}
+  return `${CREATIVITY_ICON} Creativity
+
+/creativity · ${creativityValue(s)} ${toggleIcon(s.creativity.enabled)}
 Turns creativity on or off using the saved frame.
 
-Time frame /creativity 30m${tick(s.creativity.configured && s.creativity.mode === 'time')}
+/creativity 30m · ${s.creativity.configured && s.creativity.mode === 'time' ? humanDuration(s.creativity.seconds) : 'time frame'}${tick(s.creativity.configured && s.creativity.mode === 'time')}
 Bans words used within a time window. Supports s, m, h, d.
 
-Word frame /creativity 15w${tick(s.creativity.configured && s.creativity.mode === 'count')}
+/creativity 15w · ${s.creativity.configured && s.creativity.mode === 'count' ? `${s.creativity.count} words` : 'word frame'}${tick(s.creativity.configured && s.creativity.mode === 'count')}
 Bans the last N used words.`;
+}
+
+export function multiplayerHelpText(s: ChatSettings): string {
+  return `${MULTIPLAYER_ICON} Multiplayer
+
+${MULTIPLAYER_ICON} Tournaments
+/round [N]
+Players join with the button, then the creator starts it.
+Players guess in turn order. Solving earlier gives more points.
+
+/fails N|off · ${rejectedGuessesValue(s)}
+Sets rejected guesses allowed per turn.
+
+/timer 90s · ${timerValue(s)}
+Sets a max time per turn. Send /timer with no value to disable it.
+
+${DUELS_ICON} Duels
+/duel
+Both players get the same word in private chat.
+Fewest guesses wins; speed breaks ties.`;
+}
+
+export function statsHelpText(): string {
+  return `${STATS_ICON} Stats
+
+/profile
+Shows your stats in this chat.
+
+/global
+Shows your stats across all chats.
+
+/compare
+Compares you with another player.
+
+Use /compare by replying to a player, or /compare NAME.
+One-shot games do not affect stats.`;
+}
+
+export function preferencesHelpText(s: ChatSettings): string {
+  return `${PREFERENCES_ICON} Chat Preferences
+
+${LANGUAGE_ICON} /en /ru · ${LANGUAGE_LABELS[s.language]}
+Changes language for new games.
+
+${LENGTH_ICON} /length N · ${s.wordLength} letters
+Changes word length for new games.
+
+${AUTO_ICON} /auto · ${onOff(s.bareWord)}
+Toggles guessing without /w.
+
+${CLEANUP_ICON} /cleanup · ${onOff(s.cleanup)}
+Removes previous board messages when a new board is posted.
+
+${ROAST_ICON} /roast · ${onOff(s.roast)}
+Toggles one LLM roast for below-average guesses.
+
+${EMOJI_PACK_ICON} /usepack NAME · ${emojiPackValue(s)}
+Uses a custom emoji pack for tile letters.
+
+Active games keep the language and length they started with.`;
 }
 
 function tick(enabled: boolean): string {
   return enabled ? ` ${TICK}` : '';
+}
+
+function lineTick(enabled: boolean): string {
+  return enabled ? `${TICK} ` : '';
 }
 
 function toggleIcon(enabled: boolean): string {
