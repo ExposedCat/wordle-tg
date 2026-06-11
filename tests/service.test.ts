@@ -110,6 +110,27 @@ describe('basic game flow', () => {
     expect(svc.activeGame(CHAT)?.answer.length).toBe(5);
   });
 
+  it('runs a personal game alongside the chat game for one user', () => {
+    const chatGame = svc.startGame(CHAT)!;
+    forceAnswer(chatGame.id, 'water');
+
+    const personal = svc.startPersonalGame(CHAT, A.id)!;
+    forceAnswer(personal.game.id, 'crane');
+
+    expect(svc.startPersonalGame(CHAT, A.id)).toBeNull();
+    expect(svc.activeGame(CHAT)?.answer).toBe('water');
+    expect(svc.activePersonalGame(CHAT, A.id)?.game.answer).toBe('crane');
+    expect(svc.activePersonalGame(CHAT, B.id)).toBeNull();
+
+    const personalGuess = svc.submitGuess(personal.chatId, A, 'crane');
+    expect(personalGuess.type === 'accepted' && personalGuess.solved).toBe(true);
+    expect(svc.activePersonalGame(CHAT, A.id)).toBeNull();
+    expect(svc.activeGame(CHAT)?.answer).toBe('water');
+
+    const groupGuess = svc.submitGuess(CHAT, B, 'water');
+    expect(groupGuess.type === 'accepted' && groupGuess.solved).toBe(true);
+  });
+
   it('loses after 6 wrong guesses and resets streak', () => {
     const game = svc.startGame(CHAT)!;
     const words = wrongWords(game.answer, MAX_GUESSES);

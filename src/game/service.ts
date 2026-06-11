@@ -21,7 +21,9 @@ import {
   getDailyWord,
   getDuel,
   getOpenTournament,
+  getOrCreatePersonalScopeChatId,
   getPausedDailyGame,
+  getPersonalScopeChatId,
   getSettings,
   getTournament,
   recentWords,
@@ -243,6 +245,26 @@ export class GameService {
     const s = getSettings(this.db, chatId);
     const answer = pickAnswer(s.language, s.wordLength, recentWords(this.db, chatId, s.creativity));
     return createGame(this.db, chatId, answer, s.language, 'normal');
+  }
+
+  personalGameChatId(chatId: number, userId: number): number {
+    return getOrCreatePersonalScopeChatId(this.db, chatId, userId);
+  }
+
+  activePersonalGame(chatId: number, userId: number): { chatId: number; game: GameRow } | null {
+    const personalChatId = getPersonalScopeChatId(this.db, chatId, userId);
+    if (personalChatId === null) return null;
+    const game = getActiveGame(this.db, personalChatId);
+    return game ? { chatId: personalChatId, game } : null;
+  }
+
+  /** Start a personal game in this chat for one user. Returns null if their personal game is already running. */
+  startPersonalGame(chatId: number, userId: number): { chatId: number; game: GameRow } | null {
+    const personalChatId = this.personalGameChatId(chatId, userId);
+    if (getActiveGame(this.db, personalChatId)) return null;
+    saveSettings(this.db, personalChatId, getSettings(this.db, chatId));
+    const game = this.startGame(personalChatId);
+    return game ? { chatId: personalChatId, game } : null;
   }
 
   /** Start today's normal daily game. The answer is shared per date/language and each chat can finish it once. */

@@ -207,10 +207,12 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   const scheduledTimerEvents = new Set<string>();
 
   type StateMessageOptions = {
+    headerHtml?: string;
     footer?: string;
     footerHtml?: string;
     captionHtml?: boolean;
     hideKeyboard?: boolean;
+    stateChatId?: number;
   };
 
   async function sendStateMessage(
@@ -222,14 +224,14 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   ): Promise<number | null> {
     const textParts = [caption, boardText].filter((part): part is string => Boolean(part));
     const footerParts = [opts.footer].filter((part): part is string => Boolean(part));
-    const messageParts = [...textParts, ...footerParts, opts.footerHtml].filter(Boolean);
+    const messageParts = [opts.headerHtml, ...textParts, ...footerParts, opts.footerHtml].filter(Boolean);
 
     if (messageParts.length === 0) return null;
 
-    if (opts.footerHtml || opts.captionHtml) {
+    if (opts.headerHtml || opts.footerHtml || opts.captionHtml) {
       const escaped = textParts.map((part, index) => (index === 0 && opts.captionHtml ? part : escapeHtml(part)));
       const escapedFooter = footerParts.map(escapeHtml);
-      const message = await ctx.api.sendMessage(chatId, [...escaped, ...escapedFooter, opts.footerHtml].filter(Boolean).join('\n\n'), {
+      const message = await ctx.api.sendMessage(chatId, [opts.headerHtml, ...escaped, ...escapedFooter, opts.footerHtml].filter(Boolean).join('\n\n'), {
         ...threadOptions(ctx),
         parse_mode: 'HTML',
       });
@@ -312,9 +314,10 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     caption: string,
     opts: StateMessageOptions = {}
   ): Promise<void> {
+    const stateChatId = opts.stateChatId ?? chatId;
     const threadId = messageThreadId(ctx) ?? null;
-    const settings = svc.settings(chatId);
-    const previousMessageIds = settings.cleanup ? svc.boardMessageIds(chatId, threadId) : [];
+    const settings = svc.settings(stateChatId);
+    const previousMessageIds = settings.cleanup ? svc.boardMessageIds(stateChatId, threadId) : [];
     const sentMessageIds: number[] = [];
 
     await deleteMessages(ctx, chatId, previousMessageIds);
@@ -333,13 +336,29 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const stateMessageId = await sendStateMessage(ctx, chatId, caption, undefined, opts);
     if (stateMessageId !== null) sentMessageIds.push(stateMessageId);
 
-    svc.saveBoardMessageIds(chatId, threadId, sentMessageIds);
+    svc.saveBoardMessageIds(stateChatId, threadId, sentMessageIds);
   }
 
-  async function handleGuess(ctx: Context, word: string, opts: { silentNoGame?: boolean } = {}): Promise<void> {
+  function activePersonalTarget(ctx: Context): { chatId: number; game: GameRow } | null {
+    if (!ctx.chat || !ctx.from) return null;
+    return svc.activePersonalGame(ctx.chat.id, ctx.from.id);
+  }
+
+  function guessStateChatId(ctx: Context): number {
+    return activePersonalTarget(ctx)?.chatId ?? ctx.chat!.id;
+  }
+
+  function personalHeaderHtml(user: UserRef): string {
+    return `<a href="tg://user?id=${user.id}">${escapeHtml(user.name)}</a>'s personal`;
+  }
+
+  async function handleGuess(ctx: Context, word: string, opts: { silentNoGame?: boolean; stateChatId?: number } = {}): Promise<void> {
     const chatId = ctx.chat!.id;
+    const stateChatId = opts.stateChatId ?? guessStateChatId(ctx);
     const user = userRef(ctx);
-    const out = svc.submitGuess(chatId, user, word);
+    const personal = activePersonalTarget(ctx);
+    const headerHtml = personal?.chatId === stateChatId ? personalHeaderHtml(user) : undefined;
+    const out = svc.submitGuess(stateChatId, user, word);
 
     switch (out.type) {
       case 'no_game':
@@ -353,8 +372,8 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
         return;
       case 'already_guessed':
         {
-          const game = svc.activeGame(chatId)!;
-          const settings = svc.settings(chatId);
+          const game = svc.activeGame(stateChatId)!;
+          const settings = svc.settings(stateChatId);
           await ctx.reply(alreadyGuessedText(out.word, game.answer, settings.emojiPack), { parse_mode: 'HTML' });
         }
         return;
@@ -367,7 +386,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
         return;
       case 'hard_mode_violation':
         await ctx.reply(
-          `${hardModeViolationText(out.violation, out.superHard, svc.settings(chatId).emojiPack)}${tournamentRejectStatusHtml(out.rejectStatus)}`,
+          `${hardModeViolationText(out.violation, out.superHard, svc.settings(stateChatId).emojiPack)}${tournamentRejectStatusHtml(out.rejectStatus)}`,
           {
             parse_mode: 'HTML',
           }
@@ -392,7 +411,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
       const logSkip = (reason: string) =>
         console.debug('[guess-roast]', {
           reason,
-          chatId,
+          chatId: stateChatId,
           userId: user.id,
           word: word.toUpperCase(),
           quality,
@@ -425,7 +444,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
       } catch (error) {
         console.error('Failed to generate guess roast', {
           error,
-          chatId,
+          chatId: stateChatId,
           userId: user.id,
           word: word.toUpperCase(),
           quality,
@@ -448,7 +467,12 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
           `🎉 ${user.name} got it in ${guessNumber}/${MAX_GUESSES} +${pointsAwarded}. ${answerMeaningText(game.answer, finishedMeaning)}`
         );
       const nextUpFooter = !roundEnded && nextPlayer ? `Next up ${playerMentionHtml(nextPlayer)}` : undefined;
-      await sendBoard(ctx, chatId, game, lines.join('\n'), { footerHtml: nextUpFooter, captionHtml: lost, hideKeyboard: solved });
+      await sendBoard(ctx, chatId, game, lines.join('\n'), {
+        footerHtml: nextUpFooter,
+        captionHtml: lost,
+        hideKeyboard: solved,
+        stateChatId,
+      });
       await maybeRoastGuess();
 
       if (tournamentEnded) {
@@ -458,7 +482,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
           { parse_mode: 'HTML' }
         );
       } else if (roundEnded && nextGame && nextPlayer) {
-        await sendBoard(ctx, chatId, nextGame, '', { footerHtml: tournamentStatusHtml(t), hideKeyboard: true });
+        await sendBoard(ctx, chatId, nextGame, '', { footerHtml: tournamentStatusHtml(t), stateChatId });
         scheduleTournamentTimers(t);
       } else {
         scheduleTournamentTimers(t);
@@ -471,7 +495,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     }
 
     if (duel) {
-      await sendBoard(ctx, chatId, game, lines.join('\n'), { captionHtml: lost, hideKeyboard: solved });
+      await sendBoard(ctx, chatId, game, lines.join('\n'), { captionHtml: lost, hideKeyboard: solved, stateChatId });
       const { d, finished, bothDone } = duel;
       if (finished && !bothDone) {
         await ctx.reply('⚔️ Your board is done! I will announce the result once your opponent finishes.');
@@ -489,7 +513,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
       return;
     }
 
-    await sendBoard(ctx, chatId, game, lines.join('\n'), { captionHtml: lost, hideKeyboard: solved });
+    await sendBoard(ctx, chatId, game, lines.join('\n'), { headerHtml, captionHtml: lost, hideKeyboard: solved, stateChatId });
     await maybeRoastGuess();
   }
 
@@ -520,8 +544,9 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     return `${FORBIDDEN} ${text}`;
   }
 
-  function expectedGuessLength(chatId: number): number {
-    return svc.activeGame(chatId)?.answer.length ?? svc.settings(chatId).wordLength;
+  function expectedGuessLength(ctx: Context): number {
+    const stateChatId = guessStateChatId(ctx);
+    return svc.activeGame(stateChatId)?.answer.length ?? svc.settings(ctx.chat!.id).wordLength;
   }
 
   function playGuessInstruction(bareWord: boolean, length: number): string {
@@ -585,7 +610,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const s = svc.settings(ctx.chat.id);
     s.bareWord = !s.bareWord;
     svc.saveSettings(ctx.chat.id, s);
-    const text = `Guess without /w ${s.bareWord ? 'enabled' : 'disabled'}\n${autoGuessInstruction(s.bareWord, expectedGuessLength(ctx.chat.id))}`;
+    const text = `Guess without /w ${s.bareWord ? 'enabled' : 'disabled'}\n${autoGuessInstruction(s.bareWord, expectedGuessLength(ctx))}`;
     await ctx.reply(s.bareWord ? tickText(text) : forbiddenText(text), { parse_mode: 'HTML' });
   });
 
@@ -645,6 +670,17 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     await sendBoard(ctx, chatId, game, `${playGuessInstruction(s.bareWord, game.answer.length)}`);
   });
 
+  bot.command('personal', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const user = userRef(ctx);
+    const started = svc.startPersonalGame(chatId, user.id);
+    if (!started) return void (await ctx.reply('You already have a personal game running! Check /board or /stop to abandon it.'));
+    await sendBoard(ctx, chatId, started.game, `${started.game.answer.length} letters`, {
+      headerHtml: personalHeaderHtml(user),
+      stateChatId: started.chatId,
+    });
+  });
+
   bot.command('daily', async (ctx) => {
     const chatId = ctx.chat.id;
     const t = svc.openTournament(chatId);
@@ -673,7 +709,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
 
   bot.command('w', async (ctx) => {
     const word = (ctx.match ?? '').trim();
-    const length = expectedGuessLength(ctx.chat.id);
+    const length = expectedGuessLength(ctx);
     if (!isGuessText(word, length)) {
       return void (await ctx.reply(`Usage: /w WORD (a ${length}-letter word)`));
     }
@@ -682,21 +718,24 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
 
   bot.command('board', async (ctx) => {
     const chatId = ctx.chat.id;
-    const game = svc.activeGame(chatId);
-    const t = svc.openTournament(chatId);
+    const personal = activePersonalTarget(ctx);
+    const stateChatId = personal?.chatId ?? chatId;
+    const game = personal?.game ?? svc.activeGame(chatId);
+    const t = personal ? null : svc.openTournament(chatId);
     if (!game) {
       if (t && t.status === 'joining') return void (await ctx.reply(lobbyText(t), { parse_mode: 'HTML', reply_markup: lobbyKeyboard(t) }));
       return void (await ctx.reply(`${NO_ACTIVE} No active game. Send /wordle to start one!`, { parse_mode: 'HTML' }));
     }
     if (t && t.status === 'active') {
-      await sendBoard(ctx, chatId, game, '', { footerHtml: tournamentStatusHtml(t), hideKeyboard: true });
+      await sendBoard(ctx, chatId, game, '', { footerHtml: tournamentStatusHtml(t) });
       return;
     }
-    await sendBoard(ctx, chatId, game, '');
+    await sendBoard(ctx, chatId, game, '', { headerHtml: personal ? personalHeaderHtml(userRef(ctx)) : undefined, stateChatId });
   });
 
   bot.command('stop', async (ctx) => {
-    const res = svc.giveUp(ctx.chat.id);
+    const personal = activePersonalTarget(ctx);
+    const res = svc.giveUp(personal?.chatId ?? ctx.chat.id);
     if (!res) return void (await ctx.reply(`${NO_ACTIVE} No active game or tournament to give up.`, { parse_mode: 'HTML' }));
     const meaning = res.answer ? await wordMeaning(res.answer) : undefined;
     const msg = res.answer
@@ -940,7 +979,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     if (!res) return void (await ctx.answerCallbackQuery('Could not start the tournament.'));
     await ctx.answerCallbackQuery('Game on!');
     await ctx.editMessageText(lobbyText(res.t), { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
-    await sendBoard(ctx, ctx.chat!.id, res.game, '', { footerHtml: tournamentStatusHtml(res.t), hideKeyboard: true });
+    await sendBoard(ctx, ctx.chat!.id, res.game, '', { footerHtml: tournamentStatusHtml(res.t) });
     scheduleTournamentTimers(res.t);
   });
 
@@ -949,9 +988,9 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   bot.on('message:text', async (ctx) => {
     const text = ctx.message.text.trim();
     if (text.startsWith('/')) return;
-    if (!isGuessText(text, expectedGuessLength(ctx.chat.id))) return;
+    if (!isGuessText(text, expectedGuessLength(ctx))) return;
     if (!svc.settings(ctx.chat.id).bareWord) return;
-    await handleGuess(ctx, text, { silentNoGame: true });
+    await handleGuess(ctx, text, { silentNoGame: true, stateChatId: guessStateChatId(ctx) });
   });
 
   for (const t of svc.activeTournaments()) scheduleTournamentTimers(t);

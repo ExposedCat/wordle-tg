@@ -118,6 +118,8 @@ export interface DuelRow {
   opponent: DuelPlayerResult | null;
 }
 
+const PERSONAL_SCOPE_BASE = -1_000_000_000_000_000;
+
 export interface StatsRow {
   chat_id: number;
   user_id: number;
@@ -213,6 +215,13 @@ export function openDb(path: string): Database.Database {
       message_ids TEXT NOT NULL,
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (chat_id, thread_id)
+    );
+    CREATE TABLE IF NOT EXISTS personal_scopes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      scope_chat_id INTEGER UNIQUE,
+      UNIQUE(chat_id, user_id)
     );
     CREATE TABLE IF NOT EXISTS stats (
       chat_id INTEGER NOT NULL,
@@ -328,6 +337,36 @@ export function saveSettings(db: Database.Database, chatId: number, s: ChatSetti
     `INSERT INTO chats (chat_id, settings) VALUES (?, ?)
      ON CONFLICT(chat_id) DO UPDATE SET settings = excluded.settings`
   ).run(chatId, JSON.stringify(s));
+}
+
+// ---------- personal game scopes ----------
+
+export function getPersonalScopeChatId(db: Database.Database, chatId: number, userId: number): number | null {
+  const row = db
+    .prepare('SELECT scope_chat_id FROM personal_scopes WHERE chat_id = ? AND user_id = ?')
+    .get(chatId, userId) as { scope_chat_id: number | null } | undefined;
+  return row?.scope_chat_id ?? null;
+}
+
+export function getOrCreatePersonalScopeChatId(db: Database.Database, chatId: number, userId: number): number {
+  const existing = getPersonalScopeChatId(db, chatId, userId);
+  if (existing !== null) return existing;
+
+  const inserted = db
+    .prepare('INSERT INTO personal_scopes (chat_id, user_id) VALUES (?, ?) ON CONFLICT(chat_id, user_id) DO NOTHING')
+    .run(chatId, userId);
+  const row =
+    inserted.changes === 0
+      ? (db
+          .prepare('SELECT id, scope_chat_id FROM personal_scopes WHERE chat_id = ? AND user_id = ?')
+          .get(chatId, userId) as { id: number; scope_chat_id: number | null })
+      : ({ id: Number(inserted.lastInsertRowid), scope_chat_id: null } as { id: number; scope_chat_id: number | null });
+
+  if (row.scope_chat_id !== null) return row.scope_chat_id;
+
+  const scopeChatId = PERSONAL_SCOPE_BASE - row.id;
+  db.prepare('UPDATE personal_scopes SET scope_chat_id = ? WHERE id = ?').run(scopeChatId, row.id);
+  return scopeChatId;
 }
 
 // ---------- board cleanup state ----------
