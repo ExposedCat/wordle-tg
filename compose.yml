@@ -1,0 +1,17 @@
+services:
+  telewordle:
+    build:
+      context: .
+      dockerfile: Containerfile
+      target: run
+    image: telewordle:latest
+    container_name: telewordle
+    restart: unless-stopped
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN in .env or your shell}
+      DB_PATH: /data/telewordle.db
+    volumes:
+      - telewordle-data:/data
+
+volumes:
+  telewordle-data:

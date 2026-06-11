@@ -6,8 +6,8 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-FROM node:22-slim
-# A real font is needed for the board/keyboard image rendering
+FROM node:22-slim AS run
+# A real font is needed for the board/keyboard image rendering.
 RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production

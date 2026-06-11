@@ -13,7 +13,7 @@ export const HELP_TEXT = `<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoj
 
 <tg-emoji emoji-id="5879813604068298387">❗</tg-emoji> See /settings for cool modes and preferences!
 
-<tg-emoji emoji-id="5884343982816759327">↗️</tg-emoji> <a href="https://github.com/ExposedCat/telewordle">Source Code</a>`;
+<tg-emoji emoji-id="5884343982816759327">↗️</tg-emoji> <a href="https://github.com/ExposedCat/telewordle">Source Code</a> (forked <a href="https://github.com/Argotoss/telewordle">telewordle</a>)`;
 
 export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
   normal: '😎 normal',

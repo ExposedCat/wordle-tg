@@ -89,6 +89,12 @@ Stack: TypeScript, [grammY](https://grammy.dev) (long polling — no public URL 
 ## Docker
 
 ```sh
-docker build -t telewordle .
+docker build -f Containerfile -t telewordle .
 docker run -d --name telewordle -e BOT_TOKEN=123:abc -v telewordle-data:/data telewordle
+```
+
+Or with Compose:
+
+```sh
+docker compose up -d --build
 ```
