@@ -18,8 +18,10 @@ import {
   hardModeViolationText,
   humanDuration,
   humanMs,
+  humanTurnTime,
   modeHelpText,
   parseCreativityValue,
+  parseTournamentTimerValue,
   rankLabelHtml,
   settingsText,
 	statsText,
@@ -37,6 +39,7 @@ const NOT_ALLOWED = '<tg-emoji emoji-id="5924719252379537729">🤔</tg-emoji>';
 const TOURNAMENT_CANCELLED = '<tg-emoji emoji-id="5870734657384877785">🏳️</tg-emoji>';
 const NO_ACTIVE = '<tg-emoji emoji-id="5927052244254986343">❕</tg-emoji>';
 const FORBIDDEN = '<tg-emoji emoji-id="5872829476143894491">🚫</tg-emoji>';
+const TURN_TIMER = '<tg-emoji emoji-id="5778550614669660455">⏰</tg-emoji>';
 
 type StyledInlineButton = {
 	text: string;
@@ -105,6 +108,14 @@ function tournamentRejectStatusHtml(status?: TournamentRejectStatus): string {
   const remaining = ` ${status.remaining}/${status.limit} guesses left`;
   if (!status.forfeit) return remaining;
   return `${remaining}\n\n${NOT_SO_FAST} ${playerNameLinkHtml(status.forfeitedPlayer)} hit ${status.limit} rejected guesses and forfeits the turn.\nNext up ${playerMentionHtml(status.forfeit.nextPlayer)}`;
+}
+
+function tournamentTimerReminderHtml(player: TournamentRow['players'][number], secondsLeft: number): string {
+  return `${TURN_TIMER} ${playerNameLinkHtml(player)}, ${humanTurnTime(secondsLeft)} left on your turn!`;
+}
+
+function tournamentTimerExpiredHtml(expiredPlayer: TournamentRow['players'][number], nextPlayer: TournamentRow['players'][number]): string {
+  return `${TURN_TIMER} ${playerNameLinkHtml(expiredPlayer)} ran out of time.\nNext up ${playerMentionHtml(nextPlayer)}`;
 }
 
 function messageThreadId(ctx: Context): number | undefined {
@@ -192,6 +203,7 @@ function lobbyKeyboard(t: TournamentRow): StyledInlineKeyboard {
 
 export function registerHandlers(bot: Bot, db: Database.Database): void {
   const svc = new GameService(db);
+  const scheduledTimerEvents = new Set<string>();
 
   type StateMessageOptions = {
     footer?: string;
@@ -225,6 +237,65 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
 
     const message = await ctx.api.sendMessage(chatId, [...textParts, ...footerParts].join('\n\n'), threadOptions(ctx));
     return message.message_id;
+  }
+
+  function sendTournamentTimerMessage(t: TournamentRow, html: string): Promise<unknown> {
+    return bot.api
+      .sendMessage(t.chat_id, html, {
+        ...storedThreadOptions(t.message_thread_id),
+        parse_mode: 'HTML',
+      })
+      .catch((error) => {
+        console.error('Failed to send tournament timer message', { error, tournamentId: t.id });
+      });
+  }
+
+  function liveTimedTournament(tournamentId: number, turnStartedAt: number, timerSeconds: number): TournamentRow | null {
+    const t = svc.getTournament(tournamentId);
+    if (!t || t.status !== 'active' || t.turn_started_at !== turnStartedAt) return null;
+    if (svc.settings(t.chat_id).tournamentTurnSeconds !== timerSeconds) return null;
+    return t;
+  }
+
+  function scheduleTournamentTimers(t: TournamentRow): void {
+    const timerSeconds = svc.settings(t.chat_id).tournamentTurnSeconds;
+    if (timerSeconds === null || t.status !== 'active' || t.turn_started_at === null) return;
+
+    const totalMs = timerSeconds * 1000;
+    const elapsedMs = Date.now() - t.turn_started_at;
+    const events = [
+      ...(timerSeconds > 60 ? [{ label: 'half', delayMs: Math.round(totalMs * 0.5) - elapsedMs }] : []),
+      { label: 'ninety', delayMs: Math.round(totalMs * 0.9) - elapsedMs },
+      { label: 'expire', delayMs: totalMs - elapsedMs },
+    ];
+
+    for (const event of events) {
+      if (event.label !== 'expire' && event.delayMs <= 0) continue;
+      const key = `${t.id}:${t.turn_started_at}:${timerSeconds}:${event.label}`;
+      if (scheduledTimerEvents.has(key)) continue;
+      scheduledTimerEvents.add(key);
+
+      setTimeout(() => {
+        scheduledTimerEvents.delete(key);
+        const live = liveTimedTournament(t.id, t.turn_started_at!, timerSeconds);
+        if (!live) return;
+
+        if (event.label === 'expire') {
+          const expired = svc.expireTournamentTurn(t.id, t.turn_started_at!);
+          if (!expired) return;
+          void sendTournamentTimerMessage(expired.t, tournamentTimerExpiredHtml(expired.expiredPlayer, expired.nextPlayer));
+          scheduleTournamentTimers(expired.t);
+          return;
+        }
+
+        const secondsLeft = Math.max(1, Math.ceil((live.turn_started_at! + totalMs - Date.now()) / 1000));
+        void sendTournamentTimerMessage(live, tournamentTimerReminderHtml(currentTournamentPlayer(live), secondsLeft));
+      }, Math.max(0, event.delayMs));
+    }
+  }
+
+  function scheduleRejectedTurnForfeit(status?: TournamentRejectStatus): void {
+    if (status?.forfeit) scheduleTournamentTimers(status.forfeit.t);
   }
 
   async function deleteMessages(ctx: Context, chatId: number, messageIds: number[]): Promise<void> {
@@ -277,6 +348,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
         await ctx.reply(`${NOT_ALLOWED} "${escapeHtml(out.word.toUpperCase())}" is not allowed.${tournamentRejectStatusHtml(out.rejectStatus)}`, {
           parse_mode: 'HTML',
         });
+        scheduleRejectedTurnForfeit(out.rejectStatus);
         return;
       case 'already_guessed':
         {
@@ -290,6 +362,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
           `${FORBIDDEN} Creativity mode: ${escapeHtml(out.word.toUpperCase())} was used recently here. Try something fresh!${tournamentRejectStatusHtml(out.rejectStatus)}`,
           { parse_mode: 'HTML' }
         );
+        scheduleRejectedTurnForfeit(out.rejectStatus);
         return;
       case 'hard_mode_violation':
         await ctx.reply(
@@ -298,6 +371,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
             parse_mode: 'HTML',
           }
         );
+        scheduleRejectedTurnForfeit(out.rejectStatus);
         return;
       case 'ignored':
         return;
@@ -384,6 +458,9 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
         );
       } else if (roundEnded && nextGame && nextPlayer) {
         await sendBoard(ctx, chatId, nextGame, '', { footerHtml: tournamentStatusHtml(t), hideKeyboard: true });
+        scheduleTournamentTimers(t);
+      } else {
+        scheduleTournamentTimers(t);
       }
       return;
     }
@@ -727,6 +804,29 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     await ctx.reply(tickText(`Tournament max-fails set to ${label}`), { parse_mode: 'HTML' });
   });
 
+  bot.command('timer', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const value = (ctx.match ?? '').trim();
+    const s = svc.settings(chatId);
+
+    if (!value) {
+      s.tournamentTurnSeconds = null;
+      svc.saveSettings(chatId, s);
+      return void (await ctx.reply(forbiddenText('Tournament turn timer disabled'), { parse_mode: 'HTML' }));
+    }
+
+    const seconds = parseTournamentTimerValue(value);
+    if (seconds === null) {
+      return void (await ctx.reply('Usage: /timer 90s  |  /timer 2m\nSend /timer with no value to disable it.'));
+    }
+
+    s.tournamentTurnSeconds = seconds;
+    svc.saveSettings(chatId, s);
+    const activeTournament = svc.resetActiveTournamentTurnTimer(chatId);
+    if (activeTournament) scheduleTournamentTimers(activeTournament);
+    await ctx.reply(tickText(`Tournament turn timer set to ${humanTurnTime(seconds)}`), { parse_mode: 'HTML' });
+  });
+
   bot.command('tournament', async (ctx) => {
     const chatId = ctx.chat.id;
     const arg = (ctx.match ?? '').trim().toLowerCase();
@@ -740,7 +840,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const parsedRounds = parseInt(arg, 10);
     const rounds = Number.isFinite(parsedRounds) && parsedRounds >= 1 && parsedRounds <= 25 ? parsedRounds : 0;
     if (svc.activeGame(chatId)) return void (await ctx.reply('Finish the current game first (/giveup to abandon it).'));
-    const t = svc.createTournament(chatId, rounds, userRef(ctx));
+    const t = svc.createTournament(chatId, rounds, userRef(ctx), messageThreadId(ctx) ?? null);
     if (!t) return void (await ctx.reply('Could not create a tournament right now.'));
     await ctx.reply(lobbyText(t), { parse_mode: 'HTML', reply_markup: lobbyKeyboard(t) });
   });
@@ -794,6 +894,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     await ctx.answerCallbackQuery('Game on!');
     await ctx.editMessageText(lobbyText(res.t), { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
     await sendBoard(ctx, ctx.chat!.id, res.game, '', { footerHtml: tournamentStatusHtml(res.t), hideKeyboard: true });
+    scheduleTournamentTimers(res.t);
   });
 
   // ---------- bare-word guessing ----------
@@ -805,4 +906,6 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     if (!svc.settings(ctx.chat.id).bareWord) return;
     await handleGuess(ctx, text, { silentNoGame: true });
   });
+
+  for (const t of svc.activeTournaments()) scheduleTournamentTimers(t);
 }

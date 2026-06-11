@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { answerMeaningText, alreadyGuessedText, giveUpText, hardModeViolationText, standingsText, statsText } from '../src/bot/format.js';
+import {
+  answerMeaningText,
+  alreadyGuessedText,
+  giveUpText,
+  hardModeViolationText,
+  humanTurnTime,
+  parseTournamentTimerValue,
+  standingsText,
+  statsText,
+} from '../src/bot/format.js';
 import type { StatsRow, TournamentRow } from '../src/db.js';
 import { EmojiPackConfig, orderedTileKeys } from '../src/render/emoji-pack.js';
 
@@ -154,6 +163,8 @@ describe('standingsText', () => {
       scores: Object.fromEntries(players.map((player, index) => [String(player.userId), 7 - index])),
       turn_idx: 0,
       fail_count: 0,
+      turn_started_at: null,
+      message_thread_id: null,
       created_by: 1,
     };
 
@@ -164,5 +175,20 @@ describe('standingsText', () => {
 <tg-emoji emoji-id="5794066823976592976">5️⃣</tg-emoji> Player 5 — 3 pts
 <tg-emoji emoji-id="5794235255414069703">6️⃣</tg-emoji> Player 6 — 2 pts
 7. Player 7 — 1 pts`);
+  });
+});
+
+describe('tournament timer formatting', () => {
+  it('parses seconds and minutes only', () => {
+    expect(parseTournamentTimerValue('90s')).toBe(90);
+    expect(parseTournamentTimerValue('2m')).toBe(120);
+    expect(parseTournamentTimerValue('2h')).toBeNull();
+    expect(parseTournamentTimerValue('0s')).toBeNull();
+  });
+
+  it('formats mixed minute time left compactly', () => {
+    expect(humanTurnTime(9)).toBe('9s');
+    expect(humanTurnTime(60)).toBe('1m');
+    expect(humanTurnTime(90)).toBe('1m 30s');
   });
 });

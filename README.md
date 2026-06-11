@@ -40,6 +40,7 @@ When `OPENAI_API_KEY` is configured, finished games append a concise LLM-generat
 | `/creativity_help` | Show creativity details |
 | `/settings` | Per-chat settings (see below) |
 | `/fails N` | Set tournament rejected-guess limit per turn (`off` = unlimited) |
+| `/timer 90s` | Set tournament max time per turn (`/timer` with no args disables it) |
 | `/help` | How to play |
 
 ## Settings (`/settings`, per chat)
@@ -56,6 +57,7 @@ When `OPENAI_API_KEY` is configured, finished games append a concise LLM-generat
   ```
 - **Emoji pack** — `/usepack NAME` selects an existing custom emoji pack for this chat. `NAME` can be the base name, full pack name, or `https://t.me/addemoji/...` link.
 - **Tournament max-fails** (default **5**) — rejected attempts by the current tournament player (unknown word, hard-mode violation, or creativity violation) count toward the per-turn limit. Hitting it forfeits the turn to the next player. Configure with `/fails N`, or `/fails off` for unlimited.
+- **Tournament turn timer** (default **off**) — active tournament turns can be limited with `/timer 90s` or `/timer 2m`. The bot reminds the player halfway through timers longer than a minute, again when 90% elapsed, and forfeits the turn when time runs out. Send `/timer` with no args to disable it.
 - **Difficulty** (default **normal**) — set with `/normal`, `/hard`, or `/superhard`.
   - **hard** — every revealed green/yellow hint must be used in all later guesses.
   - **super hard** — hard, plus gray letters can't be played again and known letter counts are enforced. You must use *all* information you have.

@@ -24,6 +24,8 @@ export interface ChatSettings {
   emojiPack: EmojiPackConfig | null;
   /** Tournament rejected guesses allowed per turn; null = unlimited. */
   tournamentMaxFails: number | null;
+  /** Tournament turn timer in seconds; null = disabled. */
+  tournamentTurnSeconds: number | null;
 }
 
 export const DEFAULT_SETTINGS: ChatSettings = {
@@ -35,6 +37,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   creativity: { enabled: false, configured: false, mode: 'time', seconds: 3600, count: 20 },
   emojiPack: null,
   tournamentMaxFails: 5,
+  tournamentTurnSeconds: null,
 };
 
 export interface GuessEntry {
@@ -80,6 +83,8 @@ export interface TournamentRow {
   scores: Record<string, number>; // userId -> points
   turn_idx: number; // index into rotated order of the current round
   fail_count: number; // rejected guesses by the current player this turn
+  turn_started_at: number | null;
+  message_thread_id: number | null;
   created_by: number;
 }
 
@@ -171,6 +176,8 @@ export function openDb(path: string): Database.Database {
       scores TEXT NOT NULL DEFAULT '{}',
       turn_idx INTEGER NOT NULL DEFAULT 0,
       fail_count INTEGER NOT NULL DEFAULT 0,
+      turn_started_at INTEGER,
+      message_thread_id INTEGER,
       created_by INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS duels (
@@ -222,6 +229,12 @@ export function openDb(path: string): Database.Database {
   const tournamentColumns = db.prepare('PRAGMA table_info(tournaments)').all() as { name: string }[];
   if (!tournamentColumns.some((column) => column.name === 'fail_count')) {
     db.prepare('ALTER TABLE tournaments ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0').run();
+  }
+  if (!tournamentColumns.some((column) => column.name === 'turn_started_at')) {
+    db.prepare('ALTER TABLE tournaments ADD COLUMN turn_started_at INTEGER').run();
+  }
+  if (!tournamentColumns.some((column) => column.name === 'message_thread_id')) {
+    db.prepare('ALTER TABLE tournaments ADD COLUMN message_thread_id INTEGER').run();
   }
   const duelColumns = db.prepare('PRAGMA table_info(duels)').all() as { name: string }[];
   if (!duelColumns.some((column) => column.name === 'message_thread_id')) {
@@ -278,6 +291,12 @@ export function getSettings(db: Database.Database, chatId: number): ChatSettings
         : Number.isInteger(parsed.tournamentMaxFails) && parsed.tournamentMaxFails > 0
           ? parsed.tournamentMaxFails
           : DEFAULT_SETTINGS.tournamentMaxFails,
+    tournamentTurnSeconds:
+      parsed.tournamentTurnSeconds === null
+        ? null
+        : Number.isInteger(parsed.tournamentTurnSeconds) && parsed.tournamentTurnSeconds > 0
+          ? parsed.tournamentTurnSeconds
+          : DEFAULT_SETTINGS.tournamentTurnSeconds,
   };
 }
 
@@ -392,7 +411,14 @@ export function recentWords(db: Database.Database, chatId: number, c: Creativity
 // ---------- tournaments ----------
 
 function parseTournament(row: any): TournamentRow {
-  return { ...row, players: JSON.parse(row.players), scores: JSON.parse(row.scores), fail_count: row.fail_count ?? 0 };
+  return {
+    ...row,
+    players: JSON.parse(row.players),
+    scores: JSON.parse(row.scores),
+    fail_count: row.fail_count ?? 0,
+    turn_started_at: row.turn_started_at ?? null,
+    message_thread_id: row.message_thread_id ?? null,
+  };
 }
 
 export function getOpenTournament(db: Database.Database, chatId: number): TournamentRow | null {
@@ -409,22 +435,39 @@ export function getTournament(db: Database.Database, id: number): TournamentRow 
   return row ? parseTournament(row) : null;
 }
 
+export function getActiveTournaments(db: Database.Database): TournamentRow[] {
+  const rows = db.prepare(`SELECT * FROM tournaments WHERE status = 'active'`).all();
+  return rows.map(parseTournament);
+}
+
 export function createTournament(
   db: Database.Database,
   chatId: number,
   rounds: number,
-  createdBy: number
+  createdBy: number,
+  messageThreadId: number | null = null
 ): TournamentRow {
   const info = db
-    .prepare('INSERT INTO tournaments (chat_id, rounds, created_by) VALUES (?, ?, ?)')
-    .run(chatId, rounds, createdBy);
+    .prepare('INSERT INTO tournaments (chat_id, rounds, created_by, message_thread_id) VALUES (?, ?, ?, ?)')
+    .run(chatId, rounds, createdBy, messageThreadId);
   return getTournament(db, Number(info.lastInsertRowid))!;
 }
 
 export function updateTournament(db: Database.Database, t: TournamentRow): void {
   db.prepare(
-    `UPDATE tournaments SET rounds = ?, current_round = ?, status = ?, players = ?, scores = ?, turn_idx = ?, fail_count = ? WHERE id = ?`
-  ).run(t.rounds, t.current_round, t.status, JSON.stringify(t.players), JSON.stringify(t.scores), t.turn_idx, t.fail_count, t.id);
+    `UPDATE tournaments SET rounds = ?, current_round = ?, status = ?, players = ?, scores = ?, turn_idx = ?, fail_count = ?, turn_started_at = ?, message_thread_id = ? WHERE id = ?`
+  ).run(
+    t.rounds,
+    t.current_round,
+    t.status,
+    JSON.stringify(t.players),
+    JSON.stringify(t.scores),
+    t.turn_idx,
+    t.fail_count,
+    t.turn_started_at,
+    t.message_thread_id,
+    t.id
+  );
 }
 
 // ---------- duels ----------

@@ -27,6 +27,7 @@ const COMMANDS = [
   { command: 'global', description: 'Your stats across all chats' },
   { command: 'tournament', description: 'Start a turn-based tournament' },
   { command: 'fails', description: 'Set tournament rejected-guess limit' },
+  { command: 'timer', description: 'Set tournament turn timer' },
   { command: 'challenge', description: 'Duel a friend' },
   { command: 'usepack', description: 'Use an existing custom emoji pack' },
   { command: 'creativity', description: 'Toggle or configure recent-word bans' },

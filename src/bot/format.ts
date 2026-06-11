@@ -76,6 +76,8 @@ Creativity /creativity_help
 Tournament
 /fails N · max rejected guesses per turn: ${s.tournamentMaxFails === null ? 'off' : s.tournamentMaxFails}
 /fails off · unlimited
+/timer 90s · max time per turn: ${s.tournamentTurnSeconds === null ? 'off' : humanTurnTime(s.tournamentTurnSeconds)}
+/timer · disable turn timer
 
 Misc
 /auto · guess without /w ${toggleIcon(s.bareWord)}
@@ -168,6 +170,21 @@ export function humanDuration(seconds: number): string {
   if (seconds % 3600 === 0 && seconds >= 3600) return `${seconds / 3600}h`;
   if (seconds % 60 === 0 && seconds >= 60) return `${seconds / 60}m`;
   return `${seconds}s`;
+}
+
+export function humanTurnTime(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return remainingSeconds === 0 ? `${minutes}m` : `${minutes}m ${remainingSeconds}s`;
+}
+
+export function parseTournamentTimerValue(input: string): number | null {
+  const time = input.trim().toLowerCase().match(/^(\d+)\s*(s|sec|secs|seconds?|m|min|mins|minutes?)$/);
+  if (!time) return null;
+  const n = parseInt(time[1], 10);
+  if (n <= 0) return null;
+  return time[2][0] === 'm' ? n * 60 : n;
 }
 
 /** Parse "30m", "2h", "90s", "1d" → seconds; or "15w" / "15 words" → word count. */

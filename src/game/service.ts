@@ -13,6 +13,7 @@ import {
   createDuel,
   createGame,
   createTournament,
+  getActiveTournaments,
   findStatsByName,
   getActiveGame,
   getBoardMessageIds,
@@ -55,6 +56,11 @@ export function pointsForGuessNumber(n: number): number {
 
 function roundedQualityValue(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+function nextTurnStartedAt(previous: number | null): number {
+  const now = Date.now();
+  return previous === null ? now : Math.max(now, previous + 1);
 }
 
 function logGuessQuality(input: {
@@ -102,6 +108,12 @@ export interface TournamentRejectStatus {
     t: TournamentRow;
     nextPlayer: TournamentPlayer;
   };
+}
+
+export interface TournamentTurnExpiredOutcome {
+  t: TournamentRow;
+  expiredPlayer: TournamentPlayer;
+  nextPlayer: TournamentPlayer;
 }
 
 export type GuessOutcome =
@@ -164,6 +176,14 @@ export class GameService {
 
   openTournament(chatId: number): TournamentRow | null {
     return getOpenTournament(this.db, chatId);
+  }
+
+  getTournament(tournamentId: number): TournamentRow | null {
+    return getTournament(this.db, tournamentId);
+  }
+
+  activeTournaments(): TournamentRow[] {
+    return getActiveTournaments(this.db);
   }
 
   /** Start a regular game. Returns null if a game is already running. */
@@ -286,9 +306,9 @@ export class GameService {
 
   // ---------- tournaments ----------
 
-  createTournament(chatId: number, rounds: number, creator: UserRef): TournamentRow | null {
+  createTournament(chatId: number, rounds: number, creator: UserRef, messageThreadId: number | null = null): TournamentRow | null {
     if (getOpenTournament(this.db, chatId) || getActiveGame(this.db, chatId)) return null;
-    const t = createTournament(this.db, chatId, rounds, creator.id);
+    const t = createTournament(this.db, chatId, rounds, creator.id, messageThreadId);
     t.players = [{ userId: creator.id, userName: creator.name, username: creator.username, firstName: creator.firstName ?? creator.name }];
     updateTournament(this.db, t);
     return getTournament(this.db, t.id);
@@ -325,6 +345,7 @@ export class GameService {
     t.current_round = 1;
     t.turn_idx = 0;
     t.fail_count = 0;
+    t.turn_started_at = nextTurnStartedAt(t.turn_started_at);
     for (const p of t.players) t.scores[String(p.userId)] = 0;
     updateTournament(this.db, t);
     const game = this.newTournamentGame(t);
@@ -345,6 +366,33 @@ export class GameService {
       recordUsedWord(this.db, chatId, game.answer);
     }
     return t;
+  }
+
+  resetActiveTournamentTurnTimer(chatId: number): TournamentRow | null {
+    const t = getOpenTournament(this.db, chatId);
+    if (!t || t.status !== 'active') return null;
+    t.turn_started_at = nextTurnStartedAt(t.turn_started_at);
+    updateTournament(this.db, t);
+    return getTournament(this.db, t.id);
+  }
+
+  expireTournamentTurn(tournamentId: number, turnStartedAt: number): TournamentTurnExpiredOutcome | null {
+    const t = getTournament(this.db, tournamentId);
+    if (!t || t.status !== 'active' || t.turn_started_at !== turnStartedAt) return null;
+
+    const game = getActiveGame(this.db, t.chat_id);
+    if (!game || game.kind !== 'tournament' || game.tournament_id !== t.id) return null;
+
+    const order = roundOrder(t.players, t.current_round);
+    const expiredPlayer = order[t.turn_idx % order.length];
+    t.turn_idx = (t.turn_idx + 1) % t.players.length;
+    t.fail_count = 0;
+    t.turn_started_at = nextTurnStartedAt(t.turn_started_at);
+    updateTournament(this.db, t);
+
+    const updated = getTournament(this.db, t.id)!;
+    const nextPlayer = roundOrder(updated.players, updated.current_round)[updated.turn_idx % updated.players.length];
+    return { t: updated, expiredPlayer, nextPlayer };
   }
 
   private newTournamentGame(t: TournamentRow): GameRow {
@@ -370,6 +418,7 @@ export class GameService {
     const failCount = t.fail_count;
     t.turn_idx = (t.turn_idx + 1) % t.players.length;
     t.fail_count = 0;
+    t.turn_started_at = nextTurnStartedAt(t.turn_started_at);
     updateTournament(this.db, t);
     const nextPlayer = roundOrder(t.players, t.current_round)[t.turn_idx];
     return { forfeitedPlayer: currentPlayer, failCount, limit, remaining: 0, forfeit: { t, nextPlayer } };
@@ -406,12 +455,14 @@ export class GameService {
       } else {
         t.current_round += 1;
         t.turn_idx = 0;
+        t.turn_started_at = nextTurnStartedAt(t.turn_started_at);
         updateTournament(this.db, t);
         nextGame = this.newTournamentGame(t);
         nextPlayer = roundOrder(t.players, t.current_round)[0];
       }
     } else {
       t.turn_idx = (t.turn_idx + 1) % t.players.length;
+      t.turn_started_at = nextTurnStartedAt(t.turn_started_at);
       updateTournament(this.db, t);
       nextPlayer = roundOrder(t.players, t.current_round)[t.turn_idx];
     }

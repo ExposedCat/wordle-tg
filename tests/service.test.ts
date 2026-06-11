@@ -260,6 +260,10 @@ describe('tournaments', () => {
     expect(svc.settings(CHAT).roast).toBe(false);
   });
 
+  it('defaults tournament turn timer to off in chat settings', () => {
+    expect(svc.settings(CHAT).tournamentTurnSeconds).toBeNull();
+  });
+
   it('remembers last board messages per chat topic', () => {
     svc.saveBoardMessageIds(CHAT, null, [11, 12, 13]);
     svc.saveBoardMessageIds(CHAT, 123, [21, 22]);
@@ -274,6 +278,13 @@ describe('tournaments', () => {
 
     expect(svc.startTournament(t0.id)).toBe('too_few');
     expect(svc.openTournament(CHAT)?.status).toBe('joining');
+  });
+
+  it('remembers the forum topic for tournament timer messages', () => {
+    const t0 = svc.createTournament(CHAT, 2, A, 123)!;
+
+    expect(t0.message_thread_id).toBe(123);
+    expect(svc.openTournament(CHAT)?.message_thread_id).toBe(123);
   });
 
   it('full 2-round tournament with turn enforcement and scoring', () => {
@@ -347,6 +358,25 @@ describe('tournaments', () => {
     expect(r2.rejectStatus?.forfeit?.nextPlayer.userId).toBe(B.id);
     expect(svc.openTournament(CHAT)?.fail_count).toBe(0);
     expect(svc.submitGuess(CHAT, A, 'crane').type).toBe('not_your_turn');
+  });
+
+  it('expires only the live tournament turn for the saved timestamp', () => {
+    const t0 = svc.createTournament(CHAT, 1, A)!;
+    svc.joinTournament(t0.id, B);
+    const started = svc.startTournament(t0.id);
+    expect(started).not.toBe('too_few');
+    if (started === 'too_few' || started === null) throw new Error('expected tournament start');
+
+    const originalStartedAt = started.t.turn_started_at!;
+    expect(svc.expireTournamentTurn(t0.id, originalStartedAt - 1)).toBeNull();
+
+    const expired = svc.expireTournamentTurn(t0.id, originalStartedAt);
+    expect(expired?.expiredPlayer.userId).toBe(A.id);
+    expect(expired?.nextPlayer.userId).toBe(B.id);
+    expect(expired?.t.turn_idx).toBe(1);
+    expect(expired?.t.fail_count).toBe(0);
+    expect(expired?.t.turn_started_at).toBeGreaterThanOrEqual(originalStartedAt);
+    expect(svc.expireTournamentTurn(t0.id, originalStartedAt)).toBeNull();
   });
 
   it('can disable tournament max-fails', () => {
