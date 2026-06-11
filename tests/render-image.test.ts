@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 import type { GameRow } from '../src/db.js';
 import { renderBoardSticker, renderKeyboardSticker } from '../src/render/image.js';
 
@@ -22,11 +23,42 @@ function expectWebp(buffer: Buffer): void {
   expect(buffer.subarray(8, 12).toString('ascii')).toBe('WEBP');
 }
 
+function webpDimensions(buffer: Buffer): { width: number; height: number } {
+  expect(buffer.subarray(12, 16).toString('ascii')).toBe('VP8X');
+  return {
+    width: 1 + buffer.readUIntLE(24, 3),
+    height: 1 + buffer.readUIntLE(27, 3),
+  };
+}
+
+async function pixelAlpha(buffer: Buffer, x: number, y: number): Promise<number> {
+  const img = await loadImage(buffer);
+  const canvas = createCanvas(img.width, img.height);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  return ctx.getImageData(x, y, 1, 1).data[3];
+}
+
 describe('sticker rendering', () => {
   it('renders board and keyboard stickers as WebP images', () => {
     const row = game('water', ['trace', 'wheat']);
 
     expectWebp(renderBoardSticker(row));
     expectWebp(renderKeyboardSticker(row));
+  });
+
+  it('keeps the board sticker at full Telegram sticker size as the keyboard shrinks', () => {
+    const sparseKeyboard = game('water', ['quick', 'nymph', 'blogs', 'fjord']);
+
+    expect(webpDimensions(renderBoardSticker(sparseKeyboard))).toEqual({ width: 512, height: 512 });
+  });
+
+  it('keeps board sticker margins transparent except for width anchor pixels', async () => {
+    const row = game('water', ['trace']);
+    const sticker = renderBoardSticker(row);
+
+    expect(await pixelAlpha(sticker, 0, 0)).toBe(0);
+    expect(await pixelAlpha(sticker, 0, 256)).toBeGreaterThan(0);
+    expect(await pixelAlpha(sticker, 511, 256)).toBeGreaterThan(0);
   });
 });

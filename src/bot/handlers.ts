@@ -194,7 +194,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   ): Promise<void> {
     await ctx.api.sendSticker(
       chatId,
-      new InputFile(renderBoardSticker(game, { alignToKeyboard: !opts.hideKeyboard }), 'board.webp'),
+      new InputFile(renderBoardSticker(game), 'board.webp'),
       threadOptions(ctx)
     );
     if (!opts.hideKeyboard) {

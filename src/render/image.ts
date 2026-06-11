@@ -24,13 +24,10 @@ const KEY_W = 42;
 const KEY_H = 54;
 const KEY_GAP = 6;
 const KEY_ROW_GAP = 8;
-const BOARD_ALIGN_KEY_COUNT = 8;
 
 const FONT = 'sans-serif';
 const STICKER_WIDTH = 512;
-const STICKER_PAD_X = 19;
 const STICKER_PAD_Y = 18;
-const STICKER_CONTENT_WIDTH = STICKER_WIDTH - STICKER_PAD_X * 2;
 const WEBP_QUALITY = 100;
 
 type VisibleKeyStatus = Exclude<KeyStatus, 'absent'>;
@@ -85,19 +82,21 @@ export function renderBoardImage(game: GameRow): Buffer {
   return renderBoardCanvas(game).toBuffer('image/png');
 }
 
-export function renderBoardSticker(game: GameRow, opts: { alignToKeyboard?: boolean } = {}): Buffer {
+export function renderBoardSticker(game: GameRow): Buffer {
   const source = renderBoardCanvas(game, { background: false, pad: 0 });
-  const contentWidth = opts.alignToKeyboard ?? true ? keyboardContentWidth(game) : STICKER_CONTENT_WIDTH;
-  const scale = contentWidth / source.width;
+  const scale = Math.min(STICKER_WIDTH / source.width, STICKER_WIDTH / source.height);
   const width = Math.round(source.width * scale);
   const height = Math.round(source.height * scale);
-  const sticker = createCanvas(STICKER_WIDTH, height + STICKER_PAD_Y * 2);
+  const sticker = createCanvas(STICKER_WIDTH, STICKER_WIDTH);
   const ctx = sticker.getContext('2d');
   const x = Math.round((STICKER_WIDTH - width) / 2);
+  const y = Math.round((STICKER_WIDTH - height) / 2);
+
+  anchorStickerWidth(ctx);
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(source, x, STICKER_PAD_Y, width, height);
+  ctx.drawImage(source, x, y, width, height);
 
   return encodeSticker(sticker);
 }
@@ -133,12 +132,6 @@ export function renderKeyboardSticker(game: GameRow): Buffer {
   return encodeSticker(sticker);
 }
 
-function keyboardContentWidth(game: GameRow): number {
-  const widestRow = Math.max(...visibleKeyboardRows(game).map((row) => keyboardRowWidth(row.length)), 0);
-  if (!widestRow) return STICKER_CONTENT_WIDTH;
-  return Math.min(widestRow, keyboardRowWidth(BOARD_ALIGN_KEY_COUNT));
-}
-
 function visibleKeyboardRows(game: GameRow): VisibleKey[][] {
   const status = keyboardStatus(
     game.answer,
@@ -160,6 +153,13 @@ function keyboardRowWidth(keyCount: number): number {
 
 function encodeSticker(canvas: Canvas): Buffer {
   return canvas.toBuffer('image/webp', WEBP_QUALITY);
+}
+
+function anchorStickerWidth(ctx: import('@napi-rs/canvas').SKRSContext2D): void {
+  const y = Math.floor(STICKER_WIDTH / 2);
+  ctx.fillStyle = COLORS.bg;
+  ctx.fillRect(0, y, 1, 1);
+  ctx.fillRect(STICKER_WIDTH - 1, y, 1, 1);
 }
 
 function keyboardFill(status: VisibleKeyStatus): string {
