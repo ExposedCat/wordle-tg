@@ -21,6 +21,10 @@ function shortResponseOptions(maxOutputTokens = SHORT_OUTPUT_TOKENS) {
   };
 }
 
+export function hasOpenAIKey(): boolean {
+  return OPENAI_API_KEY.length > 0;
+}
+
 export async function describeWordMeaning(word: string): Promise<string | undefined> {
   const openai = openaiClient();
   if (!openai) return undefined;

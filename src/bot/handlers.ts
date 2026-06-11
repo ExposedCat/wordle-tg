@@ -5,7 +5,7 @@ import { GameRow, TournamentRow } from '../db.js';
 import type { GuessQuality } from '../engine/guess-quality.js';
 import { isGuessText, LANGUAGE_LABELS, type WordLanguage } from '../engine/language.js';
 import { GameService, MAX_GUESSES, roundOrder, type TournamentRejectStatus, type UserRef } from '../game/service.js';
-import { describeWordMeaning, roastBadGuess } from '../llm.js';
+import { describeWordMeaning, hasOpenAIKey, roastBadGuess } from '../llm.js';
 import { emojiPackFromStickers, escapeHtml, packNameCandidates } from '../render/emoji-pack.js';
 import { renderBoardSticker, renderCompareSticker, renderKeyboardSticker } from '../render/image.js';
 import {
@@ -312,7 +312,27 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const lines: string[] = [];
 
     async function maybeRoastGuess(): Promise<void> {
-      if (!svc.settings(chatId).roast || !isBelowAverageQuality(quality)) return;
+      const roastEnabled = svc.settings(chatId).roast;
+      const belowAverage = isBelowAverageQuality(quality);
+      const logSkip = (reason: string) =>
+        console.debug('[guess-roast]', {
+          reason,
+          chatId,
+          userId: user.id,
+          word: word.toUpperCase(),
+          quality,
+        });
+
+      if (!belowAverage) return;
+      if (!roastEnabled) {
+        logSkip('roast_disabled');
+        return;
+      }
+      if (!hasOpenAIKey()) {
+        logSkip('missing_openai_key');
+        return;
+      }
+
       try {
         const roast = await roastBadGuess({
           playerName: user.name,
@@ -321,7 +341,10 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
           actualRemaining: quality.actualRemaining,
           averageRemaining: quality.averageRemaining,
         });
-        if (!roast) return;
+        if (!roast) {
+          logSkip('no_roast_text');
+          return;
+        }
         const messageId = ctx.message?.message_id;
         await ctx.reply(roast, messageId ? { reply_parameters: { message_id: messageId } } : undefined);
       } catch (error) {
