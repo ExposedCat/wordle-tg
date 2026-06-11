@@ -88,6 +88,21 @@ function tournamentRejectStatusHtml(status?: TournamentRejectStatus): string {
   return `${remaining}\n\n${NOT_SO_FAST} ${playerNameLinkHtml(status.forfeitedPlayer)} hit ${status.limit} rejected guesses and forfeits the turn.\nNext up ${playerMentionHtml(status.forfeit.nextPlayer)}`;
 }
 
+function messageThreadId(ctx: Context): number | undefined {
+  const message = ctx.message ?? ctx.callbackQuery?.message;
+  const threadId = (message as { message_thread_id?: unknown } | undefined)?.message_thread_id;
+  return typeof threadId === 'number' ? threadId : undefined;
+}
+
+function threadOptions(ctx: Context): { message_thread_id?: number } {
+  const threadId = messageThreadId(ctx);
+  return threadId === undefined ? {} : { message_thread_id: threadId };
+}
+
+function storedThreadOptions(threadId: number | null): { message_thread_id?: number } {
+  return threadId === null ? {} : { message_thread_id: threadId };
+}
+
 function lobbyText(t: TournamentRow): string {
   const names = t.players.length > 0 ? t.players.map(playerNameLinkHtml).join(', ') : 'No players';
   const rounds = t.rounds > 0 ? ` · ${t.rounds}` : '';
@@ -152,12 +167,13 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
       const escaped = textParts.map((part, index) => (index === 0 && opts.captionHtml ? part : escapeHtml(part)));
       const escapedFooter = footerParts.map(escapeHtml);
       await ctx.api.sendMessage(chatId, [...escaped, ...escapedFooter, opts.footerHtml].filter(Boolean).join('\n\n'), {
+        ...threadOptions(ctx),
         parse_mode: 'HTML',
       });
       return;
     }
 
-    await ctx.api.sendMessage(chatId, [...textParts, ...footerParts].join('\n\n'));
+    await ctx.api.sendMessage(chatId, [...textParts, ...footerParts].join('\n\n'), threadOptions(ctx));
   }
 
   async function sendBoard(
@@ -167,9 +183,13 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     caption: string,
     opts: StateMessageOptions = {}
   ): Promise<void> {
-    await ctx.api.sendSticker(chatId, new InputFile(renderBoardSticker(game, { alignToKeyboard: !opts.hideKeyboard }), 'board.webp'));
+    await ctx.api.sendSticker(
+      chatId,
+      new InputFile(renderBoardSticker(game, { alignToKeyboard: !opts.hideKeyboard }), 'board.webp'),
+      threadOptions(ctx)
+    );
     if (!opts.hideKeyboard) {
-      await ctx.api.sendSticker(chatId, new InputFile(renderKeyboardSticker(game), 'keyboard.webp'));
+      await ctx.api.sendSticker(chatId, new InputFile(renderKeyboardSticker(game), 'keyboard.webp'), threadOptions(ctx));
     }
     await sendStateMessage(ctx, chatId, caption, undefined, opts);
   }
@@ -262,7 +282,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
           winner === 'draw' ? "🤝 It's a draw!" : `👑 ${(winner as { userName: string }).userName} wins the duel!`;
         const summary = `⚔️ Duel finished! The word was ${d.answer.toUpperCase()}.\n\n${describe(d.challenger)}\n${describe(d.opponent!)}\n\n${verdict}`;
         await ctx.reply(summary);
-        await ctx.api.sendMessage(d.chat_id, summary).catch(() => {});
+        await ctx.api.sendMessage(d.chat_id, summary, storedThreadOptions(d.message_thread_id)).catch(() => {});
       }
       return;
     }
@@ -525,7 +545,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
       return void (await ctx.reply('Use /challenge in a group — that is where I announce the winner!'));
     }
     const user = userRef(ctx);
-    const d = svc.createDuel(ctx.chat.id, user);
+    const d = svc.createDuel(ctx.chat.id, user, messageThreadId(ctx) ?? null);
     const link = `https://t.me/${ctx.me.username}?start=duel_${d.id}`;
     await ctx.reply(
       `⚔️ ${user.name} challenges the chat to a duel!\n\nSame secret word for both players, ${MAX_GUESSES} tries each in a private chat with me. Fewest guesses wins; speed breaks ties.\n\nFirst person to tap becomes the opponent. ${user.name}, tap too to play your board!`,

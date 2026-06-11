@@ -302,6 +302,30 @@ describe('tournaments', () => {
     expect(svc.openTournament(CHAT)?.turn_idx).toBe(0);
   });
 
+  it('forfeits a tournament turn after a super-hard violation hits the limit', () => {
+    const s = svc.settings(CHAT);
+    s.difficulty = 'superhard';
+    s.tournamentMaxFails = 1;
+    svc.saveSettings(CHAT, s);
+
+    const t0 = svc.createTournament(CHAT, 1, A)!;
+    svc.joinTournament(t0.id, B);
+    const started = svc.startTournament(t0.id);
+    expect(started).not.toBe('too_few');
+    const { game } = started as Exclude<typeof started, 'too_few' | null>;
+    forceAnswer(game.id, 'water');
+
+    expect(svc.submitGuess(CHAT, A, 'crane').type).toBe('accepted');
+    const r = svc.submitGuess(CHAT, B, 'racer');
+    expect(r.type).toBe('hard_mode_violation');
+    if (r.type !== 'hard_mode_violation') throw new Error('expected super-hard violation');
+    expect(r.superHard).toBe(true);
+    expect(r.rejectStatus?.remaining).toBe(0);
+    expect(r.rejectStatus?.forfeit?.nextPlayer.userId).toBe(A.id);
+    expect(svc.openTournament(CHAT)?.turn_idx).toBe(0);
+    expect(svc.openTournament(CHAT)?.fail_count).toBe(0);
+  });
+
   it('forfeits a tournament turn after a creativity violation hits the limit', () => {
     const s = svc.settings(CHAT);
     s.tournamentMaxFails = 1;
@@ -358,6 +382,14 @@ describe('tournaments', () => {
 });
 
 describe('duels', () => {
+  it('remembers the forum topic for later group announcements', () => {
+    const GROUP = -200;
+    const d0 = svc.createDuel(GROUP, A, 123);
+
+    expect(d0.message_thread_id).toBe(123);
+    expect(svc.getDuel(d0.id)?.message_thread_id).toBe(123);
+  });
+
   it('full duel: fewer guesses wins, group stats recorded', () => {
     const GROUP = -200;
     const d0 = svc.createDuel(GROUP, A);

@@ -358,10 +358,10 @@ export class GameService {
   // ---------- duels ----------
 
   /** Create a duel; challenger plays in their private chat once they press Play. */
-  createDuel(chatId: number, challenger: UserRef): DuelRow {
+  createDuel(chatId: number, challenger: UserRef, messageThreadId: number | null = null): DuelRow {
     const s = getSettings(this.db, chatId);
     const answer = pickAnswer(recentWords(this.db, chatId, s.creativity));
-    return createDuel(this.db, chatId, answer, {
+    return createDuel(this.db, chatId, messageThreadId, answer, {
       userId: challenger.id,
       userName: challenger.name,
       guesses: null,

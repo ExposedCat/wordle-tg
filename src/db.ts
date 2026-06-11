@@ -88,6 +88,7 @@ export interface DuelPlayerResult {
 export interface DuelRow {
   id: number;
   chat_id: number; // group chat where the duel was created/announced
+  message_thread_id: number | null; // forum topic where the duel was created/announced
   answer: string;
   status: DuelStatus;
   challenger: DuelPlayerResult;
@@ -163,6 +164,7 @@ export function openDb(path: string): Database.Database {
     CREATE TABLE IF NOT EXISTS duels (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chat_id INTEGER NOT NULL,
+      message_thread_id INTEGER,
       answer TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
       challenger TEXT NOT NULL,
@@ -198,6 +200,10 @@ export function openDb(path: string): Database.Database {
   const tournamentColumns = db.prepare('PRAGMA table_info(tournaments)').all() as { name: string }[];
   if (!tournamentColumns.some((column) => column.name === 'fail_count')) {
     db.prepare('ALTER TABLE tournaments ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0').run();
+  }
+  const duelColumns = db.prepare('PRAGMA table_info(duels)').all() as { name: string }[];
+  if (!duelColumns.some((column) => column.name === 'message_thread_id')) {
+    db.prepare('ALTER TABLE duels ADD COLUMN message_thread_id INTEGER').run();
   }
   return db;
 }
@@ -356,10 +362,16 @@ function parseDuel(row: any): DuelRow {
   };
 }
 
-export function createDuel(db: Database.Database, chatId: number, answer: string, challenger: DuelPlayerResult): DuelRow {
+export function createDuel(
+  db: Database.Database,
+  chatId: number,
+  messageThreadId: number | null,
+  answer: string,
+  challenger: DuelPlayerResult
+): DuelRow {
   const info = db
-    .prepare('INSERT INTO duels (chat_id, answer, challenger) VALUES (?, ?, ?)')
-    .run(chatId, answer, JSON.stringify(challenger));
+    .prepare('INSERT INTO duels (chat_id, message_thread_id, answer, challenger) VALUES (?, ?, ?, ?)')
+    .run(chatId, messageThreadId, answer, JSON.stringify(challenger));
   return getDuel(db, Number(info.lastInsertRowid))!;
 }
 
