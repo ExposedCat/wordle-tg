@@ -59,6 +59,10 @@ type StyledInlineKeyboard = {
 	inline_keyboard: StyledInlineButton[][];
 };
 
+export function boardMessageIdsForCleanup(game: Pick<GameRow, 'status'>, messageIds: number[]): number[] {
+  return game.status === 'solved' ? [] : messageIds;
+}
+
 function userRef(ctx: Context): UserRef {
   const u = ctx.from!;
   const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username || 'Player';
@@ -342,7 +346,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const stateMessageId = await sendStateMessage(ctx, chatId, caption, undefined, opts);
     if (stateMessageId !== null) sentMessageIds.push(stateMessageId);
 
-    svc.saveBoardMessageIds(stateChatId, threadId, sentMessageIds);
+    svc.saveBoardMessageIds(stateChatId, threadId, boardMessageIdsForCleanup(game, sentMessageIds));
   }
 
   function activePersonalTarget(ctx: Context): { chatId: number; game: GameRow } | null {
@@ -625,7 +629,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const s = svc.settings(ctx.chat.id);
     s.cleanup = !s.cleanup;
     svc.saveSettings(ctx.chat.id, s);
-    const text = `Cleanup ${s.cleanup ? 'enabled' : 'disabled'}\nPrevious boards will ${s.cleanup ? '' : 'not '}be removed when a new board is posted`;
+    const text = `Cleanup ${s.cleanup ? 'enabled' : 'disabled'}\nPrevious unsolved boards will ${s.cleanup ? '' : 'not '}be removed when a new board is posted`;
     await ctx.reply(s.cleanup ? tickText(text) : forbiddenText(text), { parse_mode: 'HTML' });
   });
 

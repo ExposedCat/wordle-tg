@@ -225,6 +225,18 @@ describe('daily games', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('uses the server-local date for the daily word', async () => {
+    const fetchMock = fetchAnswer('crane');
+    svc = new GameService(db, { fetch: fetchMock, now: () => new Date(2026, 5, 12, 1, 10) });
+
+    const started = await svc.startDailyGame(CHAT);
+    expect(started.type).toBe('started');
+    if (started.type !== 'started') throw new Error('expected daily game');
+
+    expect(started.game.daily_date).toBe('2026-06-12');
+    expect(fetchMock).toHaveBeenCalledWith('https://www.nytimes.com/svc/wordle/v2/2026-06-12.json');
+  });
+
   it('allows a NYT solution even if the local word list does not know it', async () => {
     svc = new GameService(db, { fetch: fetchAnswer('xyzzy'), now: today });
     const started = await svc.startDailyGame(CHAT);

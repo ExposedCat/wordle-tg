@@ -273,7 +273,7 @@ ${AUTO_ICON} /auto · ${onOff(s.bareWord)}
 Toggles guessing without /w.
 
 ${CLEANUP_ICON} /cleanup · ${onOff(s.cleanup)}
-Removes previous board messages when a new board is posted.
+Removes previous unsolved board messages when a new board is posted.
 
 ${ROAST_ICON} /roast · ${onOff(s.roast)}
 Toggles one LLM roast for below-average guesses.
