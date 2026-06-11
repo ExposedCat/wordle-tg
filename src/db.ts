@@ -473,6 +473,30 @@ export function getStats(db: Database.Database, chatId: number, userId: number):
   return row;
 }
 
+export function findStatsByName(db: Database.Database, chatId: number, query: string): StatsRow | null {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return null;
+  const row = db
+    .prepare(
+      `SELECT *
+       FROM stats
+       WHERE chat_id = ?
+         AND name <> ''
+         AND instr(lower(name), ?) > 0
+       ORDER BY
+         CASE
+           WHEN lower(name) = ? THEN 0
+           WHEN substr(lower(name), 1, length(?)) = ? THEN 1
+           ELSE 2
+         END,
+         games_played DESC,
+         user_id ASC
+       LIMIT 1`
+    )
+    .get(chatId, needle, needle, needle, needle) as StatsRow | undefined;
+  return row ?? null;
+}
+
 export function getGlobalStats(db: Database.Database, userId: number): StatsRow {
   return db
     .prepare(

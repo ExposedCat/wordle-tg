@@ -13,6 +13,7 @@ import {
   createDuel,
   createGame,
   createTournament,
+  findStatsByName,
   getActiveGame,
   getBoardMessageIds,
   getDuel,
@@ -532,6 +533,10 @@ export class GameService {
 
   statsFor(chatId: number, userId: number) {
     return getStats(this.db, chatId, userId);
+  }
+
+  findStatsByName(chatId: number, query: string) {
+    return findStatsByName(this.db, chatId, query);
   }
 
   globalStatsFor(userId: number) {

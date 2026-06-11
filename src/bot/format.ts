@@ -11,6 +11,8 @@ export const HELP_TEXT = `<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoj
 /tournament [N] · start a tournament
 /w [WORD] · guess a word
 /board · see current game board
+/stats · see your stats
+/compare · compare with reply/name
 /en /ru · select word language
 
 <tg-emoji emoji-id="5879813604068298387">❗</tg-emoji> See /settings for cool modes and preferences!

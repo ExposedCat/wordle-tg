@@ -128,6 +128,19 @@ describe('basic game flow', () => {
     expect(s.dist2).toBe(1);
   });
 
+  it('finds chat stats by exact name before partial matches', () => {
+    svc.statsFor(CHAT, A.id);
+    svc.statsFor(CHAT, B.id);
+    svc.statsFor(CHAT, C.id);
+    db.prepare('UPDATE stats SET name = ?, games_played = ? WHERE chat_id = ? AND user_id = ?').run('Alice', 2, CHAT, A.id);
+    db.prepare('UPDATE stats SET name = ?, games_played = ? WHERE chat_id = ? AND user_id = ?').run('Alice Cooper', 50, CHAT, B.id);
+    db.prepare('UPDATE stats SET name = ?, games_played = ? WHERE chat_id = ? AND user_id = ?').run('Malice', 100, CHAT, C.id);
+
+    expect(svc.findStatsByName(CHAT, 'alice')?.user_id).toBe(A.id);
+    expect(svc.findStatsByName(CHAT, 'coop')?.user_id).toBe(B.id);
+    expect(svc.findStatsByName(CHAT, 'unknown')).toBeNull();
+  });
+
   it('giveup reveals the answer', () => {
     expect(svc.giveUp(CHAT)).toBeNull();
     const game = svc.startGame(CHAT)!;

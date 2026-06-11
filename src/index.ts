@@ -22,6 +22,7 @@ const COMMANDS = [
   { command: 'board', description: 'Show the current board' },
   { command: 'giveup', description: 'End the game or open tournament' },
   { command: 'stats', description: 'Your stats in this chat' },
+  { command: 'compare', description: 'Compare stats with another player' },
   { command: 'global', description: 'Your stats across all chats' },
   { command: 'tournament', description: 'Start a turn-based tournament' },
   { command: 'fails', description: 'Set tournament rejected-guess limit' },

@@ -1,10 +1,11 @@
 import type Database from 'better-sqlite3';
 import { Bot, Context, InlineKeyboard, InputFile } from 'grammy';
+import { BOT_TOKEN } from '../config.js';
 import { GameRow, TournamentRow } from '../db.js';
 import { isGuessText, LANGUAGE_LABELS, type WordLanguage } from '../engine/language.js';
 import { GameService, MAX_GUESSES, roundOrder, type TournamentRejectStatus, type UserRef } from '../game/service.js';
 import { emojiPackFromStickers, escapeHtml, packNameCandidates } from '../render/emoji-pack.js';
-import { renderBoardSticker, renderKeyboardSticker } from '../render/image.js';
+import { renderBoardSticker, renderCompareSticker, renderKeyboardSticker } from '../render/image.js';
 import {
 	HELP_TEXT,
   alreadyGuessedText,
@@ -48,6 +49,10 @@ function userRef(ctx: Context): UserRef {
   const u = ctx.from!;
   const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username || 'Player';
   return { id: u.id, name, username: u.username, firstName: u.first_name || u.username || 'Player' };
+}
+
+function telegramUserDisplayName(user: { first_name: string; last_name?: string; username?: string }): string {
+  return [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || 'Player';
 }
 
 function chatDisplayName(ctx: Context): string {
@@ -107,6 +112,24 @@ function messageThreadId(ctx: Context): number | undefined {
 function threadOptions(ctx: Context): { message_thread_id?: number } {
   const threadId = messageThreadId(ctx);
   return threadId === undefined ? {} : { message_thread_id: threadId };
+}
+
+async function userAvatar(ctx: Context, userId: number): Promise<Buffer | undefined> {
+  try {
+    const photos = await ctx.api.getUserProfilePhotos(userId, { limit: 1 });
+    const photo = photos.photos[0]?.at(-1);
+    if (!photo) return undefined;
+
+    const file = await ctx.api.getFile(photo.file_id);
+    if (!file.file_path) return undefined;
+
+    const path = file.file_path.split('/').map(encodeURIComponent).join('/');
+    const response = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${path}`);
+    if (!response.ok) return undefined;
+    return Buffer.from(await response.arrayBuffer());
+  } catch {
+    return undefined;
+  }
 }
 
 function storedThreadOptions(threadId: number | null): { message_thread_id?: number } {
@@ -483,6 +506,55 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const user = userRef(ctx);
     const row = svc.statsFor(ctx.chat.id, user.id);
     await ctx.reply(statsText(row, user.name, chatDisplayName(ctx)), { parse_mode: 'HTML' });
+  });
+
+  bot.command('compare', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const user = userRef(ctx);
+    const arg = (ctx.match ?? '').trim();
+    const repliedUser = ctx.message?.reply_to_message?.from;
+
+    let target:
+      | {
+          userId: number;
+          name: string;
+          stats: ReturnType<GameService['statsFor']>;
+        }
+      | null = null;
+
+    if (!arg && repliedUser) {
+      target = {
+        userId: repliedUser.id,
+        name: telegramUserDisplayName(repliedUser),
+        stats: svc.statsFor(chatId, repliedUser.id),
+      };
+    } else if (arg) {
+      const row = svc.findStatsByName(chatId, arg);
+      if (!row) {
+        return void (await ctx.reply('I do not know that player yet. Reply to one of their messages, or use the name they played under.'));
+      }
+      target = { userId: row.user_id, name: row.name || `User ${row.user_id}`, stats: row };
+    }
+
+    if (!target) {
+      return void (await ctx.reply('Usage: reply with /compare, or use /compare NAME'));
+    }
+    if (target.userId === user.id) {
+      return void (await ctx.reply('Pick someone else to compare with.'));
+    }
+
+    const [userPhoto, targetPhoto] = await Promise.all([userAvatar(ctx, user.id), userAvatar(ctx, target.userId)]);
+    await ctx.api.sendSticker(
+      chatId,
+      new InputFile(
+        await renderCompareSticker(
+          { name: user.name, stats: svc.statsFor(chatId, user.id), avatar: userPhoto },
+          { name: target.name, stats: target.stats, avatar: targetPhoto }
+        ),
+        'compare.webp'
+      ),
+      threadOptions(ctx)
+    );
   });
 
   bot.command('global', async (ctx) => {
