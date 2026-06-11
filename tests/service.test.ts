@@ -49,6 +49,9 @@ describe('basic game flow', () => {
     expect(sb.solves).toBe(1);
     expect(sb.dist2).toBe(1);
     expect(sb.guesses_total).toBe(1);
+    expect(sb.guess_quality_count).toBe(1);
+    expect(sb.guess_expected_remaining_sum).toBeGreaterThan(0);
+    expect(sb.guess_quality_points_sum).toBeGreaterThan(0);
     expect(sb.greens).toBe(5);
   });
 
@@ -117,6 +120,9 @@ describe('basic game flow', () => {
     expect(s.games_won).toBe(1);
     expect(s.solves).toBe(1);
     expect(s.guesses_total).toBe(8);
+    expect(s.guess_quality_count).toBe(8);
+    expect(s.guess_expected_remaining_sum).toBeGreaterThan(0);
+    expect(s.guess_quality_points_sum).toBeGreaterThan(0);
     expect(s.current_streak).toBe(1);
     expect(s.best_streak).toBe(1);
     expect(s.dist2).toBe(1);

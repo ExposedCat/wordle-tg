@@ -71,7 +71,7 @@ A Wordle bot for Telegram groups. Random 5-letter word, 6 tries, the whole chat 
 
 ## Stats
 
-Per user, per chat: games played/won, win rate, winning guesses, current/best streak, fastest solve, total guesses, green/yellow letter accuracy, winning-guess distribution, tournament games/wins/points, duel record.
+Per user, per chat: games played/won, win rate, winning guesses, current/best streak, fastest solve, total guesses, average words left after a guess, guess quality points, green/yellow letter accuracy, winning-guess distribution, tournament games/wins/points, duel record.
 
 ## Word lists
 

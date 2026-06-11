@@ -27,10 +27,11 @@ import {
   updateGame,
   updateTournament,
 } from '../db.js';
+import { guessQuality, type GuessQuality } from '../engine/guess-quality.js';
 import { hardModeViolation, type HardModeViolation } from '../engine/hardmode.js';
 import { type WordLanguage } from '../engine/language.js';
 import { scoreGuess, TileStatus } from '../engine/score.js';
-import { isValidWord, pickAnswer } from '../engine/words.js';
+import { answersForLanguage, isValidWord, pickAnswer } from '../engine/words.js';
 
 export const MAX_GUESSES = 6;
 
@@ -201,6 +202,14 @@ export class GameService {
     }
 
     // accept the guess
+    const quality = !isDuel
+      ? guessQuality(
+          game.answer,
+          game.guesses.map((g) => g.word),
+          word,
+          answersForLanguage(game.language)
+        )
+      : undefined;
     const entry: GuessEntry = { word, userId: user.id, userName: user.name, ts: Date.now() };
     game.guesses.push(entry);
     const score = scoreGuess(game.answer, word);
@@ -223,7 +232,7 @@ export class GameService {
     if (isDuel) {
       outcome.duel = this.applyDuelProgress(game, user, solved, lost, guessNumber);
     } else {
-      this.applyGuessStats(chatId, user, score);
+      this.applyGuessStats(chatId, user, score, quality!);
       if (solved || lost) this.applyGameEndStats(chatId, game, solved, guessNumber);
       if (tournament && tournament.status === 'active') {
         outcome.tournament = this.advanceTournament(tournament, user, solved, lost, guessNumber);
@@ -481,9 +490,12 @@ export class GameService {
 
   // ---------- stats ----------
 
-  private applyGuessStats(chatId: number, user: UserRef, score: TileStatus[]): void {
+  private applyGuessStats(chatId: number, user: UserRef, score: TileStatus[], quality: GuessQuality): void {
     bumpStats(this.db, chatId, user.id, user.name, {
       guesses_total: 1,
+      guess_quality_count: quality.possibleCount > 0 ? 1 : 0,
+      guess_expected_remaining_sum: quality.actualRemaining,
+      guess_quality_points_sum: quality.points,
       greens: score.filter((s) => s === 'correct').length,
       yellows: score.filter((s) => s === 'present').length,
     });

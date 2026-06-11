@@ -109,6 +109,9 @@ export interface StatsRow {
   games_won: number; // games the player participated in that were solved (by anyone)
   solves: number; // games where THIS player's guess was the winning one
   guesses_total: number;
+  guess_quality_count: number;
+  guess_expected_remaining_sum: number;
+  guess_quality_points_sum: number;
   greens: number;
   yellows: number;
   current_streak: number;
@@ -192,6 +195,9 @@ export function openDb(path: string): Database.Database {
       games_won INTEGER NOT NULL DEFAULT 0,
       solves INTEGER NOT NULL DEFAULT 0,
       guesses_total INTEGER NOT NULL DEFAULT 0,
+      guess_quality_count INTEGER NOT NULL DEFAULT 0,
+      guess_expected_remaining_sum REAL NOT NULL DEFAULT 0,
+      guess_quality_points_sum INTEGER NOT NULL DEFAULT 0,
       greens INTEGER NOT NULL DEFAULT 0,
       yellows INTEGER NOT NULL DEFAULT 0,
       current_streak INTEGER NOT NULL DEFAULT 0,
@@ -222,6 +228,16 @@ export function openDb(path: string): Database.Database {
   const gameColumns = db.prepare('PRAGMA table_info(games)').all() as { name: string }[];
   if (!gameColumns.some((column) => column.name === 'language')) {
     db.prepare("ALTER TABLE games ADD COLUMN language TEXT NOT NULL DEFAULT 'en'").run();
+  }
+  const statsColumns = db.prepare('PRAGMA table_info(stats)').all() as { name: string }[];
+  if (!statsColumns.some((column) => column.name === 'guess_quality_count')) {
+    db.prepare('ALTER TABLE stats ADD COLUMN guess_quality_count INTEGER NOT NULL DEFAULT 0').run();
+  }
+  if (!statsColumns.some((column) => column.name === 'guess_expected_remaining_sum')) {
+    db.prepare('ALTER TABLE stats ADD COLUMN guess_expected_remaining_sum REAL NOT NULL DEFAULT 0').run();
+  }
+  if (!statsColumns.some((column) => column.name === 'guess_quality_points_sum')) {
+    db.prepare('ALTER TABLE stats ADD COLUMN guess_quality_points_sum INTEGER NOT NULL DEFAULT 0').run();
   }
   return db;
 }
@@ -468,6 +484,9 @@ export function getGlobalStats(db: Database.Database, userId: number): StatsRow 
         COALESCE(SUM(games_won), 0) AS games_won,
         COALESCE(SUM(solves), 0) AS solves,
         COALESCE(SUM(guesses_total), 0) AS guesses_total,
+        COALESCE(SUM(guess_quality_count), 0) AS guess_quality_count,
+        COALESCE(SUM(guess_expected_remaining_sum), 0) AS guess_expected_remaining_sum,
+        COALESCE(SUM(guess_quality_points_sum), 0) AS guess_quality_points_sum,
         COALESCE(SUM(greens), 0) AS greens,
         COALESCE(SUM(yellows), 0) AS yellows,
         COALESCE(MAX(current_streak), 0) AS current_streak,

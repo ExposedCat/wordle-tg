@@ -205,13 +205,16 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const previousMessageIds = settings.cleanup ? svc.boardMessageIds(chatId, threadId) : [];
     const sentMessageIds: number[] = [];
 
+    await deleteMessages(ctx, chatId, previousMessageIds);
+
     const boardMessage = await ctx.api.sendSticker(
       chatId,
       new InputFile(renderBoardSticker(game), 'board.webp'),
       threadOptions(ctx)
     );
     sentMessageIds.push(boardMessage.message_id);
-    if (!opts.hideKeyboard) {
+    const hideKeyboard = opts.hideKeyboard || game.status !== 'active';
+    if (!hideKeyboard) {
       const keyboardMessage = await ctx.api.sendSticker(chatId, new InputFile(renderKeyboardSticker(game), 'keyboard.webp'), threadOptions(ctx));
       sentMessageIds.push(keyboardMessage.message_id);
     }
@@ -219,7 +222,6 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     if (stateMessageId !== null) sentMessageIds.push(stateMessageId);
 
     svc.saveBoardMessageIds(chatId, threadId, sentMessageIds);
-    await deleteMessages(ctx, chatId, previousMessageIds);
   }
 
   async function handleGuess(ctx: Context, word: string, opts: { silentNoGame?: boolean } = {}): Promise<void> {

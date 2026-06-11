@@ -82,6 +82,9 @@ describe('statsText', () => {
       games_won: 4,
       solves: 2,
       guesses_total: 8,
+      guess_quality_count: 8,
+      guess_expected_remaining_sum: 123.4,
+      guess_quality_points_sum: 534,
       greens: 10,
       yellows: 6,
       current_streak: 3,
@@ -108,6 +111,7 @@ describe('statsText', () => {
 
 <tg-emoji emoji-id="6005695599410679642">🔠</tg-emoji> Guesses
 8 guesses · <tg-emoji emoji-id="5280718893806034581">🔠</tg-emoji> 6 (75% / 15%) · <tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji> 10 (125% / 25%)
+67/100 quality score · 15.4 words left on average
 
 <tg-emoji emoji-id="6008135256798927387">🏆</tg-emoji> Winning
 <tg-emoji emoji-id="5794182096603847292">1️⃣</tg-emoji>

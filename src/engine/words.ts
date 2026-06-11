@@ -28,6 +28,10 @@ export function isValidWord(word: string, language: WordLanguage = 'en'): boolea
   return VALID_BY_LANGUAGE[language].has(word.toLowerCase());
 }
 
+export function answersForLanguage(language: WordLanguage = 'en'): readonly string[] {
+  return ANSWERS_BY_LANGUAGE[language];
+}
+
 /** Random answer, excluding any words in `exclude` (creativity mode). */
 export function pickAnswer(language: WordLanguage = 'en', exclude: Set<string> = new Set()): string {
   const answers = ANSWERS_BY_LANGUAGE[language];

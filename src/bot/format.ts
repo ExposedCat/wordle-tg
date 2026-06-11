@@ -179,6 +179,17 @@ function percent(part: number, total: number): number {
   return total ? Math.round((100 * part) / total) : 0;
 }
 
+function avgLeftText(s: StatsRow): string {
+  if (!s.guess_quality_count) return 'n/a';
+  const avg = Math.round((s.guess_expected_remaining_sum / s.guess_quality_count) * 10) / 10;
+  return avg.toString();
+}
+
+function qualityScoreText(s: StatsRow): string {
+  if (!s.guess_quality_count) return 'n/a';
+  return Math.round(s.guess_quality_points_sum / s.guess_quality_count).toString();
+}
+
 function winningBar(count: number, maxCount: number): string {
   if (!count || !maxCount) return '';
   const units = Math.max(1, Math.round((count / maxCount) * 5));
@@ -202,6 +213,7 @@ ${s.current_streak} in a row · max ${s.best_streak}
 
 ${STATS_GUESSES} Guesses
 ${s.guesses_total} guesses · ${A_YELLOW} ${s.yellows} (${percent(s.yellows, s.guesses_total)}% / ${percent(s.yellows, totalLetters)}%) · ${A_GREEN} ${s.greens} (${percent(s.greens, s.guesses_total)}% / ${percent(s.greens, totalLetters)}%)
+${qualityScoreText(s)}/100 quality score · ${avgLeftText(s)} words left on average
 
 ${STATS_WINNING} Winning
 ${winningLine(rankLabelHtml(1), s.dist1, maxDist)}
