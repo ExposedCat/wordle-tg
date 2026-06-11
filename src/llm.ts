@@ -32,7 +32,8 @@ export async function describeWordMeaning(word: string): Promise<string | undefi
     input: prompt,
   });
 
-  return response.output_text.length > 0 ? response.output_text : undefined;
+  const text = response.output_text.trim();
+  return text.length > 0 ? text : undefined;
 }
 
 export async function roastBadGuess(input: {
@@ -51,10 +52,10 @@ export async function roastBadGuess(input: {
 Rules:
 - Use nasty, sarcastic, dark savvy humor.
 - Reply in the same language/alphabet as the guessed word.
-- Exactly one short sentence, 5 to 12 words.
+- Exactly one short sentence.
 - Sound like an annoyed friend in a group chat.
-- Use simple, concrete words.
-- Make the joke about this exact word, using its literal meaning, object, sound, or shape when possible.
+- Make the joke about this exact word.
+- Joke must be sarcastic, non-flat, and not too obvious. It must be deep and smart, and it must roast the guesser.
 - Do not mention scores, numbers, possible words, remaining words, averages, or quality.`;
   const response = await openai.responses.create({
     ...shortResponseOptions(ROAST_OUTPUT_TOKENS),
@@ -63,8 +64,16 @@ Rules:
     input: prompt,
   });
 
-  if (response.output_text.length === 0) {
-    throw new Error(`Roast LLM returned empty output for ${input.word.toUpperCase()}`);
+  const text = response.output_text.trim();
+  if (text.length === 0) {
+    console.error('Roast LLM returned empty output', {
+      word,
+      responseId: response.id,
+      status: response.status,
+      error: response.error,
+      incompleteDetails: response.incomplete_details,
+    });
+    return undefined;
   }
-  return response.output_text;
+  return text;
 }

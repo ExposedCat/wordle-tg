@@ -321,9 +321,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
           actualRemaining: quality.actualRemaining,
           averageRemaining: quality.averageRemaining,
         });
-        if (!roast) {
-          throw new Error(`Roast LLM returned no text for ${word.toUpperCase()}`);
-        }
+        if (!roast) return;
         const messageId = ctx.message?.message_id;
         await ctx.reply(roast, messageId ? { reply_parameters: { message_id: messageId } } : undefined);
       } catch (error) {
