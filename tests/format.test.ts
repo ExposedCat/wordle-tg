@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alreadyGuessedText, giveUpText, hardModeViolationText, standingsText, statsText } from '../src/bot/format.js';
+import { answerMeaningText, alreadyGuessedText, giveUpText, hardModeViolationText, standingsText, statsText } from '../src/bot/format.js';
 import type { StatsRow, TournamentRow } from '../src/db.js';
 import { EmojiPackConfig, orderedTileKeys } from '../src/render/emoji-pack.js';
 
@@ -68,6 +68,15 @@ describe('giveUpText', () => {
   it('uses the custom game-over emoji label and reveals the answer', () => {
     expect(giveUpText('water')).toBe(
       '<tg-emoji emoji-id="5927054181285237634">🏳️</tg-emoji> Game Over! The word was WATER.'
+    );
+  });
+
+  it('can append a concise word meaning after a middle dot', () => {
+    expect(answerMeaningText('water', 'A clear liquid essential for life.')).toBe(
+      'WATER · A clear liquid essential for life.'
+    );
+    expect(giveUpText('water', 'A clear liquid essential for life.')).toBe(
+      '<tg-emoji emoji-id="5927054181285237634">🏳️</tg-emoji> Game Over! The word was WATER · A clear liquid essential for life.'
     );
   });
 });

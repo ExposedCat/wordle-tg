@@ -4,11 +4,13 @@ import { BOT_TOKEN } from '../config.js';
 import { GameRow, TournamentRow } from '../db.js';
 import { isGuessText, LANGUAGE_LABELS, type WordLanguage } from '../engine/language.js';
 import { GameService, MAX_GUESSES, roundOrder, type TournamentRejectStatus, type UserRef } from '../game/service.js';
+import { describeWordMeaning } from '../llm.js';
 import { emojiPackFromStickers, escapeHtml, packNameCandidates } from '../render/emoji-pack.js';
 import { renderBoardSticker, renderCompareSticker, renderKeyboardSticker } from '../render/image.js';
 import {
-	HELP_TEXT,
+  HELP_TEXT,
   alreadyGuessedText,
+  answerMeaningSentence,
   creativityHelpText,
   giveUpText,
   hardModeViolationText,
@@ -19,6 +21,7 @@ import {
   rankLabelHtml,
   settingsText,
 	statsText,
+  wordMeaningSuffix,
 } from './format.js';
 
 const PEOPLE_EMOJI = '<tg-emoji emoji-id="5942877472163892475">👥</tg-emoji>';
@@ -134,6 +137,15 @@ async function userAvatar(ctx: Context, userId: number): Promise<Buffer | undefi
 
 function storedThreadOptions(threadId: number | null): { message_thread_id?: number } {
   return threadId === null ? {} : { message_thread_id: threadId };
+}
+
+async function wordMeaning(word: string): Promise<string | undefined> {
+  try {
+    return await describeWordMeaning(word);
+  } catch (error) {
+    console.error('Failed to generate word meaning', error);
+    return undefined;
+  }
 }
 
 function lobbyText(t: TournamentRow): string {
@@ -294,14 +306,17 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const { game, guessNumber, solved, lost, tournament, duel } = out;
     const lines: string[] = [];
 
+    const finishedMeaning = solved || lost ? await wordMeaning(game.answer) : undefined;
+    const finishedMeaningHtml = finishedMeaning ? escapeHtml(finishedMeaning) : undefined;
+
     if (lost) {
       if (duel) lines.push(`${OUT_OF_GUESSES} Out of guesses! The word stays secret until your opponent finishes.`);
-      else lines.push(`${OUT_OF_GUESSES} Out of guesses! The word was ${game.answer.toUpperCase()}.`);
+      else lines.push(`${OUT_OF_GUESSES} Out of guesses! The word was ${answerMeaningSentence(game.answer, finishedMeaningHtml)}`);
     }
 
     if (tournament) {
       const { t, pointsAwarded, roundEnded, tournamentEnded, nextGame, nextPlayer, winners } = tournament;
-      if (solved) lines.push(`🎉 ${user.name} got it in ${guessNumber}/${MAX_GUESSES} +${pointsAwarded}`);
+      if (solved) lines.push(`🎉 ${user.name} got it in ${guessNumber}/${MAX_GUESSES} +${pointsAwarded}${wordMeaningSuffix(finishedMeaning)}`);
       const nextUpFooter = !roundEnded && nextPlayer ? `Next up ${playerMentionHtml(nextPlayer)}` : undefined;
       await sendBoard(ctx, chatId, game, lines.join('\n'), { footerHtml: nextUpFooter, captionHtml: lost, hideKeyboard: solved });
 
@@ -318,7 +333,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     }
 
     if (solved) {
-      lines.push(`🎉 ${user.name} got it in ${guessNumber}/${MAX_GUESSES}`);
+      lines.push(`🎉 ${user.name} got it in ${guessNumber}/${MAX_GUESSES}${wordMeaningSuffix(finishedMeaning)}`);
     }
 
     if (duel) {
@@ -333,7 +348,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
           p.solved ? `${p.userName}: solved in ${p.guesses}/${MAX_GUESSES} (${humanMs(p.ms!)})` : `${p.userName}: failed`;
         const verdict =
           winner === 'draw' ? "🤝 It's a draw!" : `👑 ${(winner as { userName: string }).userName} wins the duel!`;
-        const summary = `⚔️ Duel finished! The word was ${d.answer.toUpperCase()}.\n\n${describe(d.challenger)}\n${describe(d.opponent!)}\n\n${verdict}`;
+        const summary = `⚔️ Duel finished! The word was ${answerMeaningSentence(d.answer, finishedMeaning)}\n\n${describe(d.challenger)}\n${describe(d.opponent!)}\n\n${verdict}`;
         await ctx.reply(summary);
         await ctx.api.sendMessage(d.chat_id, summary, storedThreadOptions(d.message_thread_id)).catch(() => {});
       }
@@ -496,8 +511,9 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   bot.command('giveup', async (ctx) => {
     const res = svc.giveUp(ctx.chat.id);
     if (!res) return void (await ctx.reply(`${NO_ACTIVE} No active game or tournament to give up.`, { parse_mode: 'HTML' }));
+    const meaning = res.answer ? await wordMeaning(res.answer) : undefined;
     const msg = res.answer
-      ? `${giveUpText(res.answer)}${res.tournamentCancelled ? `\n\n${TOURNAMENT_CANCELLED} Tournament cancelled.` : ''}`
+      ? `${giveUpText(res.answer, meaning ? escapeHtml(meaning) : undefined)}${res.tournamentCancelled ? `\n\n${TOURNAMENT_CANCELLED} Tournament cancelled.` : ''}`
       : `${TOURNAMENT_CANCELLED} Tournament cancelled.`;
     await ctx.reply(msg, { parse_mode: 'HTML' });
   });

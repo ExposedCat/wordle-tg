@@ -2,6 +2,10 @@ import 'dotenv/config';
 
 export const BOT_TOKEN = process.env.BOT_TOKEN ?? '';
 export const DB_PATH = process.env.DB_PATH ?? 'telewordle.db';
+export const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? process.env.AI_API_KEY ?? '';
+export const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL ?? process.env.AI_API_BASE_URL;
+export const OPENAI_MODEL = process.env.OPENAI_MODEL ?? process.env.AI_MODEL ?? 'gpt-4.1-mini';
+export const OPENAI_TEMPERATURE = Number(process.env.OPENAI_TEMPERATURE ?? process.env.AI_TEMPERATURE ?? '0.2');
 
 export function assertConfig(): void {
   if (!BOT_TOKEN) {

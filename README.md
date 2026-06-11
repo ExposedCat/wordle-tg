@@ -2,6 +2,8 @@
 
 A Wordle bot for Telegram groups. Random 5-letter word, 6 tries, the whole chat plays together — with sticker or text boards, tournaments, duels, hard/super-hard difficulty, and a "creativity mode" that bans recently used words.
 
+When `OPENAI_API_KEY` is configured, finished games append a concise LLM-generated meaning after the revealed or completed word.
+
 ## Quick start
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`) and copy the token.

@@ -122,8 +122,21 @@ export function alreadyGuessedText(word: string, answer: string, emojiPack: Emoj
   return `${tiles} was already guessed`;
 }
 
-export function giveUpText(answer: string): string {
-  return `${GAME_OVER} Game Over! The word was ${answer.toUpperCase()}.`;
+export function wordMeaningSuffix(meaning?: string): string {
+  return meaning ? ` · ${meaning}` : '';
+}
+
+export function answerMeaningText(answer: string, meaning?: string): string {
+  return `${answer.toUpperCase()}${wordMeaningSuffix(meaning)}`;
+}
+
+export function answerMeaningSentence(answer: string, meaning?: string): string {
+  const suffix = meaning && /[.!?]$/.test(meaning.trim()) ? '' : '.';
+  return `${answerMeaningText(answer, meaning)}${suffix}`;
+}
+
+export function giveUpText(answer: string, meaning?: string): string {
+  return `${GAME_OVER} Game Over! The word was ${answerMeaningSentence(answer, meaning)}`;
 }
 
 export function creativityHelpText(s: ChatSettings): string {
