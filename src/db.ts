@@ -13,6 +13,7 @@ export interface CreativitySettings {
 }
 
 export type Difficulty = 'normal' | 'hard' | 'superhard';
+export type OneshotDifficulty = 'easy' | 'normal' | 'hard' | 'expert';
 
 export interface ChatSettings {
   language: WordLanguage;
@@ -21,6 +22,7 @@ export interface ChatSettings {
   cleanup: boolean;
   roast: boolean;
   difficulty: Difficulty;
+  oneshotDifficulty: OneshotDifficulty;
   creativity: CreativitySettings;
   emojiPack: EmojiPackConfig | null;
   /** Tournament rejected guesses allowed per turn; null = unlimited. */
@@ -36,6 +38,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   cleanup: false,
   roast: false,
   difficulty: 'normal',
+  oneshotDifficulty: 'normal',
   creativity: { enabled: false, configured: false, mode: 'time', seconds: 3600, count: 20 },
   emojiPack: null,
   tournamentMaxFails: 5,
@@ -49,7 +52,7 @@ export interface GuessEntry {
   ts: number;
 }
 
-export type GameKind = 'normal' | 'tournament' | 'duel';
+export type GameKind = 'normal' | 'tournament' | 'duel' | 'oneshot';
 export type GameStatus = 'active' | 'paused' | 'solved' | 'lost';
 
 export interface GameRow {
@@ -307,6 +310,13 @@ export function getSettings(db: Database.Database, chatId: number): ChatSettings
     rawCreativity.seconds !== undefined ||
     rawCreativity.count !== undefined;
   // merge so settings added in later versions get defaults
+  const oneshotDifficulty =
+    parsed.oneshotDifficulty === 'easy' ||
+    parsed.oneshotDifficulty === 'normal' ||
+    parsed.oneshotDifficulty === 'hard' ||
+    parsed.oneshotDifficulty === 'expert'
+      ? parsed.oneshotDifficulty
+      : DEFAULT_SETTINGS.oneshotDifficulty;
   return {
     ...structuredClone(DEFAULT_SETTINGS),
     ...parsed,
@@ -315,6 +325,7 @@ export function getSettings(db: Database.Database, chatId: number): ChatSettings
     bareWord: parsed.bareWord === true,
     cleanup: parsed.cleanup === true,
     roast: parsed.roast === true,
+    oneshotDifficulty,
     creativity,
     emojiPack: isEmojiPackConfig(parsed.emojiPack) ? parsed.emojiPack : null,
     tournamentMaxFails:

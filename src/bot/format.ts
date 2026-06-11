@@ -1,4 +1,4 @@
-import { ChatSettings, Difficulty, StatsRow, TournamentRow } from '../db.js';
+import { ChatSettings, Difficulty, OneshotDifficulty, StatsRow, TournamentRow } from '../db.js';
 import type { HardModeViolation } from '../engine/hardmode.js';
 import { DEFAULT_WORD_LENGTH, LANGUAGE_LABELS } from '../engine/language.js';
 import { scoreGuess, type TileStatus } from '../engine/score.js';
@@ -10,6 +10,7 @@ export const HELP_TEXT = `<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoj
 /wordle · start a new game
 /personal · start your own game
 /daily · start today's daily word
+/oneshot [MODE] · two-row puzzle
 /round [N] · start a tournament
 /w [WORD] · guess a word
 /board · see current game board
@@ -28,6 +29,13 @@ export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
   normal: '😎 normal',
   hard: '😤 hard',
   superhard: '🔥 super hard',
+};
+
+export const ONESHOT_DIFFICULTY_LABEL: Record<OneshotDifficulty, string> = {
+  easy: 'easy',
+  normal: 'normal',
+  hard: 'hard',
+  expert: 'expert',
 };
 
 const TICK = '<tg-emoji emoji-id="5825794181183836432">✅</tg-emoji>';
@@ -88,6 +96,7 @@ Tournament
 /timer · disable turn timer
 
 Misc
+/oneshot [easy|normal|hard|expert] · two-row puzzle: ${ONESHOT_DIFFICULTY_LABEL[s.oneshotDifficulty]}
 /auto · guess without /w ${toggleIcon(s.bareWord)}
 /cleanup · remove old boards ${toggleIcon(s.cleanup)}
 /roast · roast below-average guesses ${toggleIcon(s.roast)}

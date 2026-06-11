@@ -2,7 +2,7 @@ import { createCanvas, loadImage, type Canvas } from '@napi-rs/canvas';
 import { GameRow, StatsRow } from '../db.js';
 import { LANGUAGE_KEY_ROWS } from '../engine/language.js';
 import { KeyStatus, keyboardStatus, scoreGuess, TileStatus } from '../engine/score.js';
-import { MAX_GUESSES } from '../game/service.js';
+import { maxGuessesForGame } from '../game/service.js';
 
 // Classic Wordle palette
 const COLORS = {
@@ -46,11 +46,12 @@ type VisibleKey = {
   status: VisibleKeyStatus;
 };
 
-function renderBoardCanvas(game: GameRow, opts: { background?: boolean; pad?: number } = {}): Canvas {
+function renderBoardCanvas(game: GameRow, opts: { background?: boolean; pad?: number; rows?: number } = {}): Canvas {
   const pad = opts.pad ?? PAD;
+  const rows = opts.rows ?? maxGuessesForGame(game);
   const boardCols = game.answer.length;
   const boardW = boardCols * TILE + (boardCols - 1) * TILE_GAP;
-  const boardH = MAX_GUESSES * TILE + (MAX_GUESSES - 1) * TILE_GAP;
+  const boardH = rows * TILE + Math.max(0, rows - 1) * TILE_GAP;
   const width = boardW + pad * 2;
   const height = boardH + pad * 2;
 
@@ -66,7 +67,7 @@ function renderBoardCanvas(game: GameRow, opts: { background?: boolean; pad?: nu
   // board
   const boardX = (width - boardW) / 2;
   const scores: TileStatus[][] = game.guesses.map((g) => scoreGuess(game.answer, g.word));
-  for (let row = 0; row < MAX_GUESSES; row++) {
+  for (let row = 0; row < rows; row++) {
     for (let col = 0; col < boardCols; col++) {
       const x = boardX + col * (TILE + TILE_GAP);
       const y = pad + row * (TILE + TILE_GAP);
@@ -93,8 +94,8 @@ export function renderBoardImage(game: GameRow): Buffer {
   return renderBoardCanvas(game).toBuffer('image/png');
 }
 
-export function renderBoardSticker(game: GameRow): Buffer {
-  const source = renderBoardCanvas(game, { background: false, pad: 0 });
+export function renderBoardSticker(game: GameRow, opts: { rows?: number } = {}): Buffer {
+  const source = renderBoardCanvas(game, { background: false, pad: 0, rows: opts.rows });
   const scale = Math.min(STICKER_WIDTH / source.width, (STICKER_HEIGHT - 1) / source.height);
   const width = Math.round(source.width * scale);
   const height = Math.round(source.height * scale);

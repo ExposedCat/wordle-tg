@@ -1,7 +1,7 @@
 import { GameRow } from '../db.js';
 import { LANGUAGE_KEY_ROWS } from '../engine/language.js';
 import { keyboardStatus, scoreGuess, TileStatus } from '../engine/score.js';
-import { MAX_GUESSES } from '../game/service.js';
+import { maxGuessesForGame } from '../game/service.js';
 
 const EMOJI: Record<TileStatus, string> = {
   correct: '\u{1F7E9}', // 🟩
@@ -24,7 +24,7 @@ export function textBoard(game: GameRow, opts: { revealAnswer?: boolean; include
     lines.push(letterRow(g.word));
     lines.push(emojiRow(scoreGuess(game.answer, g.word)));
   }
-  const remaining = MAX_GUESSES - game.guesses.length;
+  const remaining = maxGuessesForGame(game) - game.guesses.length;
   if (game.status === 'active') {
     for (let i = 0; i < remaining; i++) lines.push('⬜'.repeat(game.answer.length)); // empty rows
   }

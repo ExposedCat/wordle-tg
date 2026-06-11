@@ -5,6 +5,7 @@ import {
   DuelRow,
   GameRow,
   GuessEntry,
+  OneshotDifficulty,
   TournamentPlayer,
   TournamentRow,
   bumpStats,
@@ -64,6 +65,14 @@ export interface GiveUpOutcome {
   daily: boolean;
 }
 
+export interface OneshotPuzzle {
+  mode: OneshotDifficulty;
+  game: GameRow;
+  opener: string;
+  answer: string;
+  score: TileStatus[];
+}
+
 /** Turn order for a given 1-based round: players rotated left by (round - 1). */
 export function roundOrder(players: TournamentPlayer[], round: number): TournamentPlayer[] {
   const k = (round - 1) % players.length;
@@ -74,6 +83,10 @@ export function pointsForGuessNumber(n: number): number {
   return MAX_GUESSES + 1 - n; // guess #1 → 6 pts … guess #6 → 1 pt
 }
 
+export function maxGuessesForGame(game: GameRow): number {
+  return game.kind === 'oneshot' ? 2 : MAX_GUESSES;
+}
+
 function roundedQualityValue(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -81,6 +94,35 @@ function roundedQualityValue(n: number): number {
 function nextTurnStartedAt(previous: number | null): number {
   const now = Date.now();
   return previous === null ? now : Math.max(now, previous + 1);
+}
+
+const ONESHOT_TARGETS: Record<OneshotDifficulty, { correct: number; present: number }> = {
+  easy: { correct: 2, present: 1 },
+  normal: { correct: 1, present: 2 },
+  hard: { correct: 1, present: 1 },
+  expert: { correct: 0, present: 2 },
+};
+
+function randomItem<T>(items: readonly T[]): T {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function shuffled<T>(items: readonly T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function scoreMatchesTarget(score: TileStatus[], target: { correct: number; present: number }): boolean {
+  return score.filter((s) => s === 'correct').length === target.correct && score.filter((s) => s === 'present').length === target.present;
+}
+
+function impossibleOneshotTarget(length: number, target: { correct: number; present: number }): boolean {
+  if (target.correct + target.present > length) return true;
+  return target.correct === length - 1 && target.present > 0;
 }
 
 function logGuessQuality(input: {
@@ -215,6 +257,13 @@ export class GameService {
     return s;
   }
 
+  setOneshotDifficulty(chatId: number, difficulty: OneshotDifficulty): ChatSettings {
+    const s = getSettings(this.db, chatId);
+    s.oneshotDifficulty = difficulty;
+    saveSettings(this.db, chatId, s);
+    return s;
+  }
+
   boardMessageIds(chatId: number, messageThreadId: number | null): number[] {
     return getBoardMessageIds(this.db, chatId, messageThreadId);
   }
@@ -245,6 +294,29 @@ export class GameService {
     const s = getSettings(this.db, chatId);
     const answer = pickAnswer(s.language, s.wordLength, recentWords(this.db, chatId, s.creativity));
     return createGame(this.db, chatId, answer, s.language, 'normal');
+  }
+
+  startOneshot(chatId: number): OneshotPuzzle | null {
+    if (getActiveGame(this.db, chatId)) return null;
+    const settings = getSettings(this.db, chatId);
+    const words = answersForLanguage(settings.language, settings.wordLength);
+    const target = ONESHOT_TARGETS[settings.oneshotDifficulty];
+    if (impossibleOneshotTarget(settings.wordLength, target)) return null;
+
+    for (const opener of shuffled(words)) {
+      const candidates = words.filter((answer) => answer !== opener && scoreMatchesTarget(scoreGuess(answer, opener), target));
+      if (!candidates.length) continue;
+
+      const answer = randomItem(candidates);
+      const now = Date.now();
+      const game = createGame(this.db, chatId, answer, settings.language, 'oneshot');
+      game.guesses.push({ word: opener, userId: 0, userName: 'One-shot', ts: now });
+      updateGame(this.db, game);
+
+      return { mode: settings.oneshotDifficulty, game: getActiveGame(this.db, chatId)!, opener, answer, score: scoreGuess(answer, opener) };
+    }
+
+    return null;
   }
 
   personalGameChatId(chatId: number, userId: number): number {
@@ -305,7 +377,7 @@ export class GameService {
     game.status = daily ? 'paused' : 'lost';
     game.finished_at = daily ? null : Date.now();
     updateGame(this.db, game);
-    if (!daily) recordUsedWord(this.db, chatId, game.answer);
+    if (!daily && game.kind !== 'oneshot') recordUsedWord(this.db, chatId, game.answer);
     let tournamentCancelled = false;
     if (game.tournament_id) {
       const t = getTournament(this.db, game.tournament_id);
@@ -338,6 +410,7 @@ export class GameService {
     }
 
     const settings = getSettings(this.db, chatId);
+    const isOneshot = game.kind === 'oneshot';
 
     const tournamentReject = () =>
       tournament && currentTournamentPlayer
@@ -353,19 +426,19 @@ export class GameService {
     const isDuel = game.kind === 'duel';
 
     // creativity mode (not for duels — both duelists must face the same word fairly)
-    if (!isDuel && word !== game.answer && recentWords(this.db, chatId, settings.creativity).has(word)) {
+    if (!isDuel && !isOneshot && word !== game.answer && recentWords(this.db, chatId, settings.creativity).has(word)) {
       return { type: 'creativity_blocked', word, rejectStatus: tournamentReject() };
     }
 
     // hard / super hard mode: all revealed hints must be used
-    if (settings.difficulty !== 'normal') {
+    if (!isOneshot && settings.difficulty !== 'normal') {
       const superHard = settings.difficulty === 'superhard';
       const violation = hardModeViolation(game.answer, game.guesses.map((g) => g.word), word, superHard);
       if (violation) return { type: 'hard_mode_violation', word, violation, superHard, rejectStatus: tournamentReject() };
     }
 
     // accept the guess
-    const quality = !isDuel
+    const quality = !isDuel && !isOneshot
       ? guessQuality(
           game.answer,
           game.guesses.map((g) => g.word),
@@ -378,7 +451,7 @@ export class GameService {
     const score = scoreGuess(game.answer, word);
     const guessNumber = game.guesses.length;
     const solved = word === game.answer;
-    const lost = !solved && guessNumber >= MAX_GUESSES;
+    const lost = !solved && guessNumber >= maxGuessesForGame(game);
     logGuessQuality({ chatId, game, user, word, guessNumber, quality });
 
     if (solved) game.status = 'solved';
@@ -386,7 +459,7 @@ export class GameService {
     if (solved || lost) game.finished_at = Date.now();
     updateGame(this.db, game);
 
-    if (!isDuel) {
+    if (!isDuel && !isOneshot) {
       recordUsedWord(this.db, chatId, word);
       if (lost) recordUsedWord(this.db, chatId, game.answer); // revealed answer is burned too
     }
@@ -395,7 +468,7 @@ export class GameService {
 
     if (isDuel) {
       outcome.duel = this.applyDuelProgress(game, user, solved, lost, guessNumber);
-    } else {
+    } else if (!isOneshot) {
       this.applyGuessStats(chatId, user, score, quality!);
       if (solved || lost) this.applyGameEndStats(chatId, game, solved, guessNumber);
       if (tournament && tournament.status === 'active') {

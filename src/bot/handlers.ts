@@ -1,10 +1,10 @@
 import type Database from 'better-sqlite3';
 import { Bot, Context, InlineKeyboard, InputFile } from 'grammy';
 import { BOT_TOKEN } from '../config.js';
-import { GameRow, TournamentRow } from '../db.js';
+import { GameRow, OneshotDifficulty, TournamentRow } from '../db.js';
 import type { GuessQuality } from '../engine/guess-quality.js';
 import { MAX_WORD_LENGTH, MIN_WORD_LENGTH, isGuessText, LANGUAGE_LABELS, type WordLanguage } from '../engine/language.js';
-import { GameService, MAX_GUESSES, roundOrder, type TournamentRejectStatus, type UserRef } from '../game/service.js';
+import { GameService, MAX_GUESSES, maxGuessesForGame, roundOrder, type TournamentRejectStatus, type UserRef } from '../game/service.js';
 import { describeWordMeaning, hasOpenAIKey, roastBadGuess } from '../llm.js';
 import { emojiPackFromStickers, escapeHtml, packNameCandidates } from '../render/emoji-pack.js';
 import { renderBoardSticker, renderCompareSticker, renderKeyboardSticker } from '../render/image.js';
@@ -41,6 +41,8 @@ const NO_ACTIVE = '<tg-emoji emoji-id="5927052244254986343">❕</tg-emoji>';
 const FORBIDDEN = '<tg-emoji emoji-id="5872829476143894491">🚫</tg-emoji>';
 const TURN_TIMER = '<tg-emoji emoji-id="5778550614669660455">⏰</tg-emoji>';
 const ENTRY_ICON = '<tg-emoji emoji-id="5843799474362652262">▶️</tg-emoji>';
+const ONESHOT_ICON = '<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji>';
+const ONESHOT_DIFFICULTIES: OneshotDifficulty[] = ['easy', 'normal', 'hard', 'expert'];
 
 type StyledInlineButton = {
 	text: string;
@@ -403,6 +405,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     }
 
     const { game, guessNumber, solved, lost, tournament, duel, quality } = out;
+    const maxGuesses = maxGuessesForGame(game);
     const lines: string[] = [];
 
     async function maybeRoastGuess(): Promise<void> {
@@ -491,7 +494,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     }
 
     if (solved) {
-      lines.push(`🎉 ${user.name} got it in ${guessNumber}/${MAX_GUESSES}. ${answerMeaningText(game.answer, finishedMeaning)}`);
+      lines.push(`🎉 ${user.name} got it in ${guessNumber}/${maxGuesses}. ${answerMeaningText(game.answer, finishedMeaning)}`);
     }
 
     if (duel) {
@@ -705,6 +708,30 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const game = started.game;
     const s = svc.settings(chatId);
     await sendBoard(ctx, chatId, game, `${playGuessInstruction(s.bareWord, game.answer.length)}`);
+  });
+
+  bot.command('oneshot', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const arg = (ctx.match ?? '').trim().toLowerCase();
+
+    if (arg) {
+      if (!ONESHOT_DIFFICULTIES.includes(arg as OneshotDifficulty)) {
+        return void (await ctx.reply('Usage: /oneshot [easy|normal|hard|expert]'));
+      }
+      const s = svc.setOneshotDifficulty(chatId, arg as OneshotDifficulty);
+      return void (await ctx.reply(tickText(`One-shot difficulty set to ${s.oneshotDifficulty}`), { parse_mode: 'HTML' }));
+    }
+
+    const t = svc.openTournament(chatId);
+    if (t) return void (await ctx.reply('A tournament is open in this chat — finish it with /stop first.'));
+    if (svc.activeGame(chatId)) return void (await ctx.reply('A game is already running! Check /board or /stop to abandon it.'));
+
+    const puzzle = svc.startOneshot(chatId);
+    if (!puzzle) return void (await ctx.reply('Could not find a one-shot puzzle for the current settings. Try another length or mode.'));
+
+    await sendBoard(ctx, chatId, puzzle.game, `${ONESHOT_ICON} One-shot ${puzzle.mode} · ${puzzle.game.answer.length} letters`, {
+      captionHtml: true,
+    });
   });
 
   bot.command('w', async (ctx) => {

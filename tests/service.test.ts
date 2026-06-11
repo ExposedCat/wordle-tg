@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { openDb } from '../src/db.js';
 import { isGuessText } from '../src/engine/language.js';
 import { ANSWERS, ANSWERS_RU, answersForLanguage, isValidWord } from '../src/engine/words.js';
+import { scoreGuess } from '../src/engine/score.js';
 import { GameService, MAX_GUESSES, pointsForGuessNumber, roundOrder } from '../src/game/service.js';
 
 const CHAT = -100500;
@@ -351,6 +352,81 @@ describe('creativity mode', () => {
       expect(g.answer).not.toBe(g1.answer);
       svc.giveUp(CHAT);
     }
+  });
+});
+
+describe('one-shot puzzles', () => {
+  it('remembers mode per chat and starts a playable two-row puzzle without stats', () => {
+    const expected = {
+      easy: { correct: 2, present: 1 },
+      normal: { correct: 1, present: 2 },
+      hard: { correct: 1, present: 1 },
+      expert: { correct: 0, present: 2 },
+    } as const;
+
+    expect(svc.settings(CHAT).oneshotDifficulty).toBe('normal');
+
+    for (const mode of Object.keys(expected) as (keyof typeof expected)[]) {
+      svc.setOneshotDifficulty(CHAT, mode);
+      const puzzle = svc.startOneshot(CHAT);
+      expect(puzzle).not.toBeNull();
+      if (!puzzle) throw new Error('expected one-shot puzzle');
+
+      expect(puzzle.mode).toBe(mode);
+      expect(puzzle.game.kind).toBe('oneshot');
+      expect(puzzle.game.status).toBe('active');
+      expect(puzzle.game.guesses.map((g) => g.word)).toEqual([puzzle.opener]);
+      expect(puzzle.game.answer).toHaveLength(svc.settings(CHAT).wordLength);
+      expect(svc.activeGame(CHAT)?.id).toBe(puzzle.game.id);
+
+      const score = scoreGuess(puzzle.answer, puzzle.opener);
+      expect(score.filter((s) => s === 'correct')).toHaveLength(expected[mode].correct);
+      expect(score.filter((s) => s === 'present')).toHaveLength(expected[mode].present);
+
+      const guess = svc.submitGuess(CHAT, A, puzzle.answer);
+      expect(guess.type === 'accepted' && guess.solved).toBe(true);
+      if (guess.type !== 'accepted') throw new Error('expected accepted one-shot answer');
+      expect(guess.guessNumber).toBe(2);
+      expect(svc.activeGame(CHAT)).toBeNull();
+    }
+
+    const statsRows = db.prepare('SELECT COUNT(*) AS count FROM stats').get() as { count: number };
+    const usedRows = db.prepare('SELECT COUNT(*) AS count FROM used_words').get() as { count: number };
+    expect(statsRows.count).toBe(0);
+    expect(usedRows.count).toBe(0);
+  });
+
+  it('gives exactly one player guess and then loses without stats', () => {
+    svc.setOneshotDifficulty(CHAT, 'normal');
+    const puzzle = svc.startOneshot(CHAT)!;
+    const wrong = ANSWERS.find((word) => word !== puzzle.answer && word !== puzzle.opener);
+    if (!wrong) throw new Error('expected wrong answer candidate');
+
+    const guess = svc.submitGuess(CHAT, A, wrong);
+    expect(guess.type === 'accepted' && guess.lost).toBe(true);
+    if (guess.type !== 'accepted') throw new Error('expected accepted one-shot miss');
+    expect(guess.guessNumber).toBe(2);
+    expect(svc.activeGame(CHAT)).toBeNull();
+
+    const statsRows = db.prepare('SELECT COUNT(*) AS count FROM stats').get() as { count: number };
+    const usedRows = db.prepare('SELECT COUNT(*) AS count FROM used_words').get() as { count: number };
+    expect(statsRows.count).toBe(0);
+    expect(usedRows.count).toBe(0);
+  });
+
+  it('does not start on top of another active game', () => {
+    svc.startGame(CHAT);
+
+    expect(svc.startOneshot(CHAT)).toBeNull();
+  });
+
+  it('returns null immediately for impossible mode and length combinations', () => {
+    const s = svc.settings(CHAT);
+    s.wordLength = 3;
+    s.oneshotDifficulty = 'easy';
+    svc.saveSettings(CHAT, s);
+
+    expect(svc.startOneshot(CHAT)).toBeNull();
   });
 });
 
