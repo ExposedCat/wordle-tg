@@ -15,6 +15,7 @@ function game(answer: string, guesses: string[]): GameRow {
     finished_at: null,
     tournament_id: null,
     duel_id: null,
+    daily_date: null,
   };
 }
 

@@ -40,6 +40,7 @@ const TOURNAMENT_CANCELLED = '<tg-emoji emoji-id="5870734657384877785">🏳️</
 const NO_ACTIVE = '<tg-emoji emoji-id="5927052244254986343">❕</tg-emoji>';
 const FORBIDDEN = '<tg-emoji emoji-id="5872829476143894491">🚫</tg-emoji>';
 const TURN_TIMER = '<tg-emoji emoji-id="5778550614669660455">⏰</tg-emoji>';
+const ENTRY_ICON = '<tg-emoji emoji-id="5843799474362652262">▶️</tg-emoji>';
 
 type StyledInlineButton = {
 	text: string;
@@ -644,6 +645,32 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     await sendBoard(ctx, chatId, game, `${playGuessInstruction(s.bareWord, game.answer.length)}`);
   });
 
+  bot.command('daily', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const t = svc.openTournament(chatId);
+    if (t) return void (await ctx.reply('A tournament is open in this chat — finish it with /stop first.'));
+    let started: Awaited<ReturnType<GameService['startDailyGame']>>;
+    try {
+      started = await svc.startDailyGame(chatId);
+    } catch (error) {
+      console.error('Failed to start daily wordle', { error, chatId });
+      return void (await ctx.reply("Could not fetch today's Wordle. Try again in a bit."));
+    }
+    if (started.type === 'active') {
+      return void (await ctx.reply('A game is already running! Check /board or /stop to abandon it.'));
+    }
+    if (started.type === 'already_done') {
+      return void (
+        await ctx.reply(`${ENTRY_ICON} Daily word ${escapeHtml(started.word.toUpperCase())} was already guessed!`, {
+          parse_mode: 'HTML',
+        })
+      );
+    }
+    const game = started.game;
+    const s = svc.settings(chatId);
+    await sendBoard(ctx, chatId, game, `${playGuessInstruction(s.bareWord, game.answer.length)}`);
+  });
+
   bot.command('w', async (ctx) => {
     const word = (ctx.match ?? '').trim();
     const length = expectedGuessLength(ctx.chat.id);
@@ -674,7 +701,9 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const meaning = res.answer ? await wordMeaning(res.answer) : undefined;
     const msg = res.answer
       ? `${giveUpText(res.answer, meaning ? escapeHtml(meaning) : undefined)}${res.tournamentCancelled ? `\n\n${TOURNAMENT_CANCELLED} Tournament cancelled.` : ''}`
-      : `${TOURNAMENT_CANCELLED} Tournament cancelled.`;
+      : res.daily
+        ? `${TOURNAMENT_CANCELLED} Daily game stopped. The word stays hidden.`
+        : `${TOURNAMENT_CANCELLED} Tournament cancelled.`;
     await ctx.reply(msg, { parse_mode: 'HTML' });
   });
 

@@ -16,6 +16,7 @@ function game(answer: string, guesses: string[], language: GameRow['language'] =
     finished_at: null,
     tournament_id: null,
     duel_id: null,
+    daily_date: null,
   };
 }
 
@@ -127,14 +128,20 @@ describe('sticker rendering', () => {
     expect(webpDimensions(sticker)).toEqual({ width: 512, height: 512 });
   });
 
-  it('keeps board sticker width fixed and lets height follow the board aspect ratio', () => {
+  it("keeps board stickers inside Telegram's 512px square envelope", () => {
     const classic = webpDimensions(renderBoardSticker(game('water', ['trace'])));
     const wide = webpDimensions(renderBoardSticker(game('basketball', ['waterfalls'])));
 
-    expect(classic.width).toBe(512);
-    expect(classic.height).toBeGreaterThan(512);
-    expect(wide.width).toBe(512);
-    expect(wide.height).toBeLessThan(512);
+    expect(classic).toEqual({ width: 512, height: 512 });
+    expect(wide).toEqual({ width: 512, height: 512 });
+  });
+
+  it('bottom-aligns the board sticker with a transparent top edge', async () => {
+    const sticker = renderBoardSticker(game('water', ['trace']));
+
+    expect(await pixelAlpha(sticker, 256, 0)).toBe(0);
+    expect(await pixelAlpha(sticker, 256, 1)).toBeGreaterThan(0);
+    expect(await pixelAlpha(sticker, 256, 511)).toBeGreaterThan(0);
   });
 
   it('keeps board sticker corners transparent except for width anchor pixels', async () => {

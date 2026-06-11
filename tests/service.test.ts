@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { openDb } from '../src/db.js';
 import { isGuessText } from '../src/engine/language.js';
 import { ANSWERS, ANSWERS_RU, answersForLanguage, isValidWord } from '../src/engine/words.js';
@@ -169,7 +169,113 @@ describe('basic game flow', () => {
     const game = svc.startGame(CHAT)!;
     const res = svc.giveUp(CHAT);
     expect(res?.answer).toBe(game.answer);
+    expect(res?.daily).toBe(false);
     expect(svc.activeGame(CHAT)).toBeNull();
+  });
+});
+
+describe('daily games', () => {
+  const today = () => new Date('2026-06-11T12:00:00.000Z');
+
+  function fetchAnswer(answer: string): typeof fetch {
+    return vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ solution: answer }),
+    })) as unknown as typeof fetch;
+  }
+
+  it('fetches and persists the English daily word once per date', async () => {
+    const fetchMock = fetchAnswer('crane');
+    svc = new GameService(db, { fetch: fetchMock, now: today });
+
+    const first = await svc.startDailyGame(CHAT);
+    expect(first.type).toBe('started');
+    if (first.type !== 'started') throw new Error('expected daily game');
+    expect(first.game.answer).toBe('crane');
+    expect(first.game.daily_date).toBe('2026-06-11');
+
+    const other = await svc.startDailyGame(-100501);
+    expect(other.type).toBe('started');
+    if (other.type !== 'started') throw new Error('expected second daily game');
+    expect(other.game.answer).toBe('crane');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows a NYT solution even if the local word list does not know it', async () => {
+    svc = new GameService(db, { fetch: fetchAnswer('xyzzy'), now: today });
+    const started = await svc.startDailyGame(CHAT);
+    if (started.type !== 'started') throw new Error('expected daily game');
+
+    expect(isValidWord('xyzzy', 'en')).toBe(false);
+    const guess = svc.submitGuess(CHAT, A, 'xyzzy');
+    expect(guess.type === 'accepted' && guess.solved).toBe(true);
+  });
+
+  it('reports the completed daily word for the same chat and date', async () => {
+    svc = new GameService(db, { fetch: fetchAnswer('crane'), now: today });
+    const started = await svc.startDailyGame(CHAT);
+    if (started.type !== 'started') throw new Error('expected daily game');
+
+    const solved = svc.submitGuess(CHAT, A, 'crane');
+    expect(solved.type === 'accepted' && solved.solved).toBe(true);
+
+    const next = await svc.startDailyGame(CHAT);
+    expect(next).toMatchObject({ type: 'already_done', word: 'crane' });
+  });
+
+  it('pauses and resumes the daily word on giveup without revealing it', async () => {
+    svc = new GameService(db, { fetch: fetchAnswer('crane'), now: today });
+    const started = await svc.startDailyGame(CHAT);
+    if (started.type !== 'started') throw new Error('expected daily game');
+    svc.submitGuess(CHAT, A, 'water');
+
+    const res = svc.giveUp(CHAT);
+    expect(res).toMatchObject({ answer: null, daily: true, tournamentCancelled: false });
+    expect(svc.activeGame(CHAT)).toBeNull();
+
+    const next = await svc.startDailyGame(CHAT);
+    expect(next.type).toBe('resumed');
+    if (next.type !== 'resumed') throw new Error('expected resumed daily game');
+    expect(next.game.answer).toBe('crane');
+    expect(next.game.guesses.map((g) => g.word)).toEqual(['water']);
+  });
+
+  it('reports an exhausted daily word as already done', async () => {
+    svc = new GameService(db, { fetch: fetchAnswer('crane'), now: today });
+    const started = await svc.startDailyGame(CHAT);
+    if (started.type !== 'started') throw new Error('expected daily game');
+
+    for (const word of wrongWords('crane', MAX_GUESSES)) svc.submitGuess(CHAT, A, word);
+
+    const next = await svc.startDailyGame(CHAT);
+    expect(next).toMatchObject({ type: 'already_done', word: 'crane' });
+  });
+
+  it('chooses and persists a Russian daily word from the 5-letter list', async () => {
+    const fetchMock = fetchAnswer('crane');
+    const s = svc.settings(CHAT);
+    s.language = 'ru';
+    svc.saveSettings(CHAT, s);
+    svc = new GameService(db, { fetch: fetchMock, now: today });
+
+    const first = await svc.startDailyGame(CHAT);
+    expect(first.type).toBe('started');
+    if (first.type !== 'started') throw new Error('expected Russian daily game');
+    expect(first.game.language).toBe('ru');
+    expect(first.game.answer).toHaveLength(5);
+    expect(isValidWord(first.game.answer, 'ru', 5)).toBe(true);
+
+    const otherChat = -100501;
+    const otherSettings = svc.settings(otherChat);
+    otherSettings.language = 'ru';
+    svc.saveSettings(otherChat, otherSettings);
+    const second = await svc.startDailyGame(otherChat);
+    expect(second.type).toBe('started');
+    if (second.type !== 'started') throw new Error('expected second Russian daily game');
+    expect(second.game.answer).toBe(first.game.answer);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
@@ -524,7 +630,7 @@ describe('tournaments', () => {
     svc.createTournament(CHAT, 0, A)!;
 
     const res = svc.giveUp(CHAT);
-    expect(res).toEqual({ answer: null, tournamentCancelled: true });
+    expect(res).toEqual({ answer: null, tournamentCancelled: true, daily: false });
     expect(svc.openTournament(CHAT)).toBeNull();
   });
 

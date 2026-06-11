@@ -30,6 +30,7 @@ const KEY_ROW_GAP = 8;
 
 const FONT = 'sans-serif';
 const STICKER_WIDTH = 512;
+const STICKER_HEIGHT = 512;
 const STICKER_PAD_Y = 18;
 const WEBP_QUALITY = 100;
 
@@ -94,16 +95,17 @@ export function renderBoardImage(game: GameRow): Buffer {
 
 export function renderBoardSticker(game: GameRow): Buffer {
   const source = renderBoardCanvas(game, { background: false, pad: 0 });
-  const scale = STICKER_WIDTH / source.width;
+  const scale = Math.min(STICKER_WIDTH / source.width, (STICKER_HEIGHT - 1) / source.height);
+  const width = Math.round(source.width * scale);
   const height = Math.round(source.height * scale);
-  const sticker = createCanvas(STICKER_WIDTH, height);
+  const sticker = createCanvas(STICKER_WIDTH, STICKER_HEIGHT);
   const ctx = sticker.getContext('2d');
 
-  anchorStickerWidth(ctx, height);
+  anchorStickerWidth(ctx);
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(source, 0, 0, STICKER_WIDTH, height);
+  ctx.drawImage(source, Math.round((STICKER_WIDTH - width) / 2), STICKER_HEIGHT - height, width, height);
 
   return encodeSticker(sticker);
 }

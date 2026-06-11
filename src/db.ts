@@ -50,7 +50,7 @@ export interface GuessEntry {
 }
 
 export type GameKind = 'normal' | 'tournament' | 'duel';
-export type GameStatus = 'active' | 'solved' | 'lost';
+export type GameStatus = 'active' | 'paused' | 'solved' | 'lost';
 
 export interface GameRow {
   id: number;
@@ -64,6 +64,14 @@ export interface GameRow {
   finished_at: number | null;
   tournament_id: number | null;
   duel_id: number | null;
+  daily_date: string | null;
+}
+
+export interface DailyWordRow {
+  date: string;
+  language: WordLanguage;
+  word: string;
+  fetched_at: number;
 }
 
 export type TournamentStatus = 'joining' | 'active' | 'done' | 'cancelled';
@@ -158,9 +166,17 @@ export function openDb(path: string): Database.Database {
       started_at INTEGER NOT NULL,
       finished_at INTEGER,
       tournament_id INTEGER,
-      duel_id INTEGER
+      duel_id INTEGER,
+      daily_date TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_games_active ON games(chat_id, status);
+    CREATE TABLE IF NOT EXISTS daily_words (
+      date TEXT NOT NULL,
+      language TEXT NOT NULL,
+      word TEXT NOT NULL,
+      fetched_at INTEGER NOT NULL,
+      PRIMARY KEY (date, language)
+    );
     CREATE TABLE IF NOT EXISTS used_words (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chat_id INTEGER NOT NULL,
@@ -246,6 +262,10 @@ export function openDb(path: string): Database.Database {
   if (!gameColumns.some((column) => column.name === 'language')) {
     db.prepare("ALTER TABLE games ADD COLUMN language TEXT NOT NULL DEFAULT 'en'").run();
   }
+  if (!gameColumns.some((column) => column.name === 'daily_date')) {
+    db.prepare('ALTER TABLE games ADD COLUMN daily_date TEXT').run();
+  }
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_games_daily ON games(chat_id, daily_date, language, kind, status)').run();
   const statsColumns = db.prepare('PRAGMA table_info(stats)').all() as { name: string }[];
   if (!statsColumns.some((column) => column.name === 'guess_quality_count')) {
     db.prepare('ALTER TABLE stats ADD COLUMN guess_quality_count INTEGER NOT NULL DEFAULT 0').run();
@@ -347,6 +367,7 @@ function parseGame(row: any): GameRow {
     ...row,
     language: isWordLanguage(row.language) ? row.language : DEFAULT_LANGUAGE,
     guesses: JSON.parse(row.guesses),
+    daily_date: row.daily_date ?? null,
   };
 }
 
@@ -368,15 +389,15 @@ export function createGame(
   answer: string,
   language: WordLanguage,
   kind: GameKind = 'normal',
-  opts: { tournamentId?: number; duelId?: number } = {}
+  opts: { tournamentId?: number; duelId?: number; dailyDate?: string } = {}
 ): GameRow {
   const now = Date.now();
   const info = db
     .prepare(
-      `INSERT INTO games (chat_id, answer, language, kind, started_at, tournament_id, duel_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO games (chat_id, answer, language, kind, started_at, tournament_id, duel_id, daily_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(chatId, answer, language, kind, now, opts.tournamentId ?? null, opts.duelId ?? null);
+    .run(chatId, answer, language, kind, now, opts.tournamentId ?? null, opts.duelId ?? null, opts.dailyDate ?? null);
   return getGame(db, Number(info.lastInsertRowid))!;
 }
 
@@ -384,6 +405,63 @@ export function updateGame(db: Database.Database, game: GameRow): void {
   db.prepare(
     `UPDATE games SET status = ?, guesses = ?, finished_at = ? WHERE id = ?`
   ).run(game.status, JSON.stringify(game.guesses), game.finished_at, game.id);
+}
+
+export function getDailyWord(db: Database.Database, date: string, language: WordLanguage): DailyWordRow | null {
+  const row = db
+    .prepare('SELECT * FROM daily_words WHERE date = ? AND language = ?')
+    .get(date, language) as DailyWordRow | undefined;
+  return row && isWordLanguage(row.language) ? row : null;
+}
+
+export function saveDailyWord(db: Database.Database, date: string, language: WordLanguage, word: string): void {
+  db.prepare(
+    `INSERT INTO daily_words (date, language, word, fetched_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(date, language) DO NOTHING`
+  ).run(date, language, word.toLowerCase(), Date.now());
+}
+
+export function getCompletedDailyGame(
+  db: Database.Database,
+  chatId: number,
+  date: string,
+  language: WordLanguage
+): GameRow | null {
+  const row = db
+    .prepare(
+      `SELECT * FROM games
+       WHERE chat_id = ?
+         AND daily_date = ?
+         AND language = ?
+         AND kind = 'normal'
+         AND status IN ('solved', 'lost')
+       ORDER BY id DESC
+       LIMIT 1`
+    )
+    .get(chatId, date, language);
+  return row ? parseGame(row) : null;
+}
+
+export function getPausedDailyGame(
+  db: Database.Database,
+  chatId: number,
+  date: string,
+  language: WordLanguage
+): GameRow | null {
+  const row = db
+    .prepare(
+      `SELECT * FROM games
+       WHERE chat_id = ?
+         AND daily_date = ?
+         AND language = ?
+         AND kind = 'normal'
+         AND status = 'paused'
+       ORDER BY id DESC
+       LIMIT 1`
+    )
+    .get(chatId, date, language);
+  return row ? parseGame(row) : null;
 }
 
 // ---------- used words (creativity mode) ----------

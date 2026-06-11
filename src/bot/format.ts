@@ -8,6 +8,7 @@ import { escapeHtml, formatTileLetter, type EmojiPackConfig, type TileColor } fr
 export const HELP_TEXT = `<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji> Wordle
 
 /wordle · start a new game
+/daily · start today's daily word
 /round [N] · start a tournament
 /w [WORD] · guess a word
 /board · see current game board

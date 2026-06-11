@@ -16,6 +16,7 @@ bot.catch((err) => {
 
 const COMMANDS = [
   { command: 'wordle', description: 'Start a new game' },
+  { command: 'daily', description: "Start today's daily word" },
   { command: 'w', description: 'Guess the current word' },
   { command: 'length', description: 'Set word length' },
   { command: 'auto', description: 'Toggle bare-word guessing' },

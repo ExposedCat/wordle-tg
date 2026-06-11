@@ -17,12 +17,16 @@ import {
   findStatsByName,
   getActiveGame,
   getBoardMessageIds,
+  getCompletedDailyGame,
+  getDailyWord,
   getDuel,
   getOpenTournament,
+  getPausedDailyGame,
   getSettings,
   getTournament,
   recentWords,
   recordUsedWord,
+  saveDailyWord,
   saveBoardMessageIds,
   saveSettings,
   updateDuel,
@@ -31,7 +35,7 @@ import {
 } from '../db.js';
 import { guessQuality, type GuessQuality } from '../engine/guess-quality.js';
 import { hardModeViolation, type HardModeViolation } from '../engine/hardmode.js';
-import { isSupportedWordLength, type WordLanguage } from '../engine/language.js';
+import { DEFAULT_WORD_LENGTH, isLanguageWord, isSupportedWordLength, type WordLanguage } from '../engine/language.js';
 import { scoreGuess, TileStatus } from '../engine/score.js';
 import { answersForLanguage, isValidWord, pickAnswer } from '../engine/words.js';
 
@@ -42,6 +46,20 @@ export interface UserRef {
   name: string;
   username?: string;
   firstName?: string;
+}
+
+type FetchLike = typeof fetch;
+
+export type StartDailyGameOutcome =
+  | { type: 'started'; game: GameRow }
+  | { type: 'resumed'; game: GameRow }
+  | { type: 'active'; game: GameRow }
+  | { type: 'already_done'; word: string; game: GameRow };
+
+export interface GiveUpOutcome {
+  answer: string | null;
+  tournamentCancelled: boolean;
+  daily: boolean;
 }
 
 /** Turn order for a given 1-based round: players rotated left by (round - 1). */
@@ -144,8 +162,33 @@ export type GuessOutcome =
       duel?: { d: DuelRow; finished: boolean; bothDone: boolean };
     };
 
+function dateKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+async function fetchNytWordleAnswer(date: string, fetchImpl: FetchLike): Promise<string> {
+  const response = await fetchImpl(`https://www.nytimes.com/svc/wordle/v2/${date}.json`);
+  if (!response.ok) throw new Error(`NYT Wordle fetch failed: ${response.status} ${response.statusText}`);
+
+  const payload = (await response.json()) as { solution?: unknown };
+  const solution = typeof payload.solution === 'string' ? payload.solution.trim().toLowerCase() : '';
+  if (!isLanguageWord(solution, 'en', DEFAULT_WORD_LENGTH)) {
+    throw new Error('NYT Wordle response did not include a valid 5-letter solution');
+  }
+  return solution;
+}
+
 export class GameService {
-  constructor(private db: Database.Database) {}
+  private readonly fetchImpl: FetchLike;
+  private readonly now: () => Date;
+
+  constructor(
+    private db: Database.Database,
+    opts: { fetch?: FetchLike; now?: () => Date } = {}
+  ) {
+    this.fetchImpl = opts.fetch ?? fetch;
+    this.now = opts.now ?? (() => new Date());
+  }
 
   settings(chatId: number): ChatSettings {
     return getSettings(this.db, chatId);
@@ -202,20 +245,45 @@ export class GameService {
     return createGame(this.db, chatId, answer, s.language, 'normal');
   }
 
-  /** Abort the current game, or cancel an open tournament lobby. Returns the revealed answer when there is one. */
-  giveUp(chatId: number): { answer: string | null; tournamentCancelled: boolean } | null {
+  /** Start today's normal daily game. The answer is shared per date/language and each chat can finish it once. */
+  async startDailyGame(chatId: number): Promise<StartDailyGameOutcome> {
+    const active = getActiveGame(this.db, chatId);
+    if (active) return { type: 'active', game: active };
+
+    const settings = getSettings(this.db, chatId);
+    const language = settings.language;
+    const date = dateKey(this.now());
+    const completed = getCompletedDailyGame(this.db, chatId, date, language);
+    if (completed) return { type: 'already_done', word: completed.answer, game: completed };
+
+    const paused = getPausedDailyGame(this.db, chatId, date, language);
+    if (paused) {
+      paused.status = 'active';
+      paused.finished_at = null;
+      updateGame(this.db, paused);
+      return { type: 'resumed', game: getActiveGame(this.db, chatId)! };
+    }
+
+    const answer = await this.dailyAnswer(date, language);
+    const game = createGame(this.db, chatId, answer, language, 'normal', { dailyDate: date });
+    return { type: 'started', game };
+  }
+
+  /** Abort the current game, or cancel an open tournament lobby. Returns the revealed answer when it can be shown. */
+  giveUp(chatId: number): GiveUpOutcome | null {
     const game = getActiveGame(this.db, chatId);
     if (!game) {
       const t = getOpenTournament(this.db, chatId);
       if (!t || t.status !== 'joining') return null;
       t.status = 'cancelled';
       updateTournament(this.db, t);
-      return { answer: null, tournamentCancelled: true };
+      return { answer: null, tournamentCancelled: true, daily: false };
     }
-    game.status = 'lost';
-    game.finished_at = Date.now();
+    const daily = game.daily_date !== null;
+    game.status = daily ? 'paused' : 'lost';
+    game.finished_at = daily ? null : Date.now();
     updateGame(this.db, game);
-    recordUsedWord(this.db, chatId, game.answer);
+    if (!daily) recordUsedWord(this.db, chatId, game.answer);
     let tournamentCancelled = false;
     if (game.tournament_id) {
       const t = getTournament(this.db, game.tournament_id);
@@ -225,7 +293,7 @@ export class GameService {
         tournamentCancelled = true;
       }
     }
-    return { answer: game.answer, tournamentCancelled };
+    return { answer: daily ? null : game.answer, tournamentCancelled, daily };
   }
 
   submitGuess(chatId: number, user: UserRef, rawWord: string): GuessOutcome {
@@ -255,7 +323,9 @@ export class GameService {
         : undefined;
 
     const wordLength = game.answer.length;
-    if (!isValidWord(word, game.language, wordLength)) return { type: 'not_a_word', word, rejectStatus: tournamentReject() };
+    if (word !== game.answer && !isValidWord(word, game.language, wordLength)) {
+      return { type: 'not_a_word', word, rejectStatus: tournamentReject() };
+    }
     if (game.guesses.some((g) => g.word === word)) return { type: 'already_guessed', word };
 
     const isDuel = game.kind === 'duel';
@@ -408,6 +478,19 @@ export class GameService {
     const s = getSettings(this.db, t.chat_id);
     const answer = pickAnswer(s.language, s.wordLength, recentWords(this.db, t.chat_id, s.creativity));
     return createGame(this.db, t.chat_id, answer, s.language, 'tournament', { tournamentId: t.id });
+  }
+
+  private async dailyAnswer(date: string, language: WordLanguage): Promise<string> {
+    const existing = getDailyWord(this.db, date, language);
+    if (existing) return existing.word;
+
+    const answer =
+      language === 'en'
+        ? await fetchNytWordleAnswer(date, this.fetchImpl)
+        : pickAnswer('ru', DEFAULT_WORD_LENGTH);
+
+    saveDailyWord(this.db, date, language, answer);
+    return getDailyWord(this.db, date, language)?.word ?? answer;
   }
 
   private recordTournamentRejectedAttempt(
