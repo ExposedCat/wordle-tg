@@ -2,9 +2,10 @@ import type Database from 'better-sqlite3';
 import { Bot, Context, InlineKeyboard, InputFile } from 'grammy';
 import { BOT_TOKEN } from '../config.js';
 import { GameRow, TournamentRow } from '../db.js';
+import type { GuessQuality } from '../engine/guess-quality.js';
 import { isGuessText, LANGUAGE_LABELS, type WordLanguage } from '../engine/language.js';
 import { GameService, MAX_GUESSES, roundOrder, type TournamentRejectStatus, type UserRef } from '../game/service.js';
-import { describeWordMeaning } from '../llm.js';
+import { describeWordMeaning, roastBadGuess } from '../llm.js';
 import { emojiPackFromStickers, escapeHtml, packNameCandidates } from '../render/emoji-pack.js';
 import { renderBoardSticker, renderCompareSticker, renderKeyboardSticker } from '../render/image.js';
 import {
@@ -146,6 +147,10 @@ async function wordMeaning(word: string): Promise<string | undefined> {
     console.error('Failed to generate word meaning', error);
     return undefined;
   }
+}
+
+function isBelowAverageQuality(quality?: GuessQuality): quality is GuessQuality {
+  return quality !== undefined && quality.possibleCount > 0 && quality.actualRemaining > quality.averageRemaining;
 }
 
 function lobbyText(t: TournamentRow): string {
@@ -303,8 +308,34 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
         return;
     }
 
-    const { game, guessNumber, solved, lost, tournament, duel } = out;
+    const { game, guessNumber, solved, lost, tournament, duel, quality } = out;
     const lines: string[] = [];
+
+    async function maybeRoastGuess(): Promise<void> {
+      if (!svc.settings(chatId).roast || !isBelowAverageQuality(quality)) return;
+      try {
+        const roast = await roastBadGuess({
+          playerName: user.name,
+          word,
+          possibleCount: quality.possibleCount,
+          actualRemaining: quality.actualRemaining,
+          averageRemaining: quality.averageRemaining,
+        });
+        if (!roast) {
+          throw new Error(`Roast LLM returned no text for ${word.toUpperCase()}`);
+        }
+        const messageId = ctx.message?.message_id;
+        await ctx.reply(roast, messageId ? { reply_parameters: { message_id: messageId } } : undefined);
+      } catch (error) {
+        console.error('Failed to generate guess roast', {
+          error,
+          chatId,
+          userId: user.id,
+          word: word.toUpperCase(),
+          quality,
+        });
+      }
+    }
 
     const finishedMeaning = solved || lost ? await wordMeaning(game.answer) : undefined;
     const finishedMeaningHtml = finishedMeaning ? escapeHtml(finishedMeaning) : undefined;
@@ -319,6 +350,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
       if (solved) lines.push(`🎉 ${user.name} got it in ${guessNumber}/${MAX_GUESSES} +${pointsAwarded}${wordMeaningSuffix(finishedMeaning)}`);
       const nextUpFooter = !roundEnded && nextPlayer ? `Next up ${playerMentionHtml(nextPlayer)}` : undefined;
       await sendBoard(ctx, chatId, game, lines.join('\n'), { footerHtml: nextUpFooter, captionHtml: lost, hideKeyboard: solved });
+      await maybeRoastGuess();
 
       if (tournamentEnded) {
         const winnerNames = winners.map(playerNameLinkHtml).join(' & ');
@@ -356,6 +388,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     }
 
     await sendBoard(ctx, chatId, game, lines.join('\n'), { captionHtml: lost, hideKeyboard: solved });
+    await maybeRoastGuess();
   }
 
   async function setDifficulty(ctx: Context, difficulty: 'normal' | 'hard' | 'superhard'): Promise<void> {
@@ -443,6 +476,14 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     svc.saveSettings(ctx.chat.id, s);
     const text = `Cleanup ${s.cleanup ? 'enabled' : 'disabled'}\nPrevious boards will ${s.cleanup ? '' : 'not '}be removed when a new board is posted`;
     await ctx.reply(s.cleanup ? tickText(text) : forbiddenText(text), { parse_mode: 'HTML' });
+  });
+
+  bot.command('roast', async (ctx) => {
+    const s = svc.settings(ctx.chat.id);
+    s.roast = !s.roast;
+    svc.saveSettings(ctx.chat.id, s);
+    const text = `Roasts ${s.roast ? 'enabled' : 'disabled'}\nBelow-average guesses will ${s.roast ? '' : 'not '}get one LLM roast`;
+    await ctx.reply(s.roast ? tickText(text) : forbiddenText(text), { parse_mode: 'HTML' });
   });
 
   bot.command('usepack', async (ctx) => {

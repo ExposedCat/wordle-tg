@@ -1,8 +1,8 @@
 # telewordle
 
-A Wordle bot for Telegram groups. Random 5-letter word, 6 tries, the whole chat plays together — with sticker or text boards, tournaments, duels, hard/super-hard difficulty, and a "creativity mode" that bans recently used words.
+A Wordle bot for Telegram groups. Random 5-letter word, 6 tries, the whole chat plays together — with sticker or text boards, tournaments, duels, hard/super-hard difficulty, LLM roasts for bad guesses, and a "creativity mode" that bans recently used words.
 
-When `OPENAI_API_KEY` is configured, finished games append a concise LLM-generated meaning after the revealed or completed word.
+When `OPENAI_API_KEY` is configured, finished games append a concise LLM-generated meaning after the revealed or completed word. If `/roast` is enabled, below-average guesses get a one-sentence LLM roast in reply.
 
 ## Quick start
 
@@ -24,6 +24,7 @@ When `OPENAI_API_KEY` is configured, finished games append a concise LLM-generat
 | `/w WORD` | Submit a guess |
 | `/auto` | Toggle bare-word guessing in this chat |
 | `/cleanup` | Toggle removal of the previous board, keyboard, and status message |
+| `/roast` | Toggle LLM roasts for below-average guesses |
 | `/board` | Show the current board (and tournament standings) |
 | `/giveup` | Abandon the game and reveal the word, or cancel an open tournament |
 | `/stats` | Your stats in this chat |
@@ -45,6 +46,7 @@ When `OPENAI_API_KEY` is configured, finished games append a concise LLM-generat
 
 - **Bare-word guessing** (default **off**) — toggle with `/auto`. When on, any message that is a valid 5-letter word counts as a guess. Unknown words get a "not in my dictionary" notice.
 - **Cleanup** (default **off**) — toggle with `/cleanup`. When on, each newly posted board removes the previous board sticker, keyboard sticker, and status message in the same chat/topic.
+- **Roasts** (default **off**) — toggle with `/roast`. When on and `OPENAI_API_KEY` is configured, guesses that leave more words than the current average get a one-sentence roast in reply.
 - **Board** — classic Wordle board as a WebP sticker, followed by a centered WebP keyboard sticker with absent letters hidden. Result/status text is sent afterward only when needed:
   ```
   T R A C E

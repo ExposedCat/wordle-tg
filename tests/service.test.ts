@@ -35,7 +35,10 @@ describe('basic game flow', () => {
     const [w1] = wrongWords(game.answer, 1);
     const r1 = svc.submitGuess(CHAT, A, w1);
     expect(r1.type).toBe('accepted');
-    if (r1.type === 'accepted') expect(r1.guessNumber).toBe(1);
+    if (r1.type === 'accepted') {
+      expect(r1.guessNumber).toBe(1);
+      expect(r1.quality?.possibleCount).toBeGreaterThan(0);
+    }
 
     const r2 = svc.submitGuess(CHAT, B, game.answer);
     expect(r2.type === 'accepted' && r2.solved).toBe(true);
@@ -251,6 +254,10 @@ describe('tournaments', () => {
 
   it('defaults board cleanup to off in chat settings', () => {
     expect(svc.settings(CHAT).cleanup).toBe(false);
+  });
+
+  it('defaults guess roasts to off in chat settings', () => {
+    expect(svc.settings(CHAT).roast).toBe(false);
   });
 
   it('remembers last board messages per chat topic', () => {

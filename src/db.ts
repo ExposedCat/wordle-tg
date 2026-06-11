@@ -18,6 +18,7 @@ export interface ChatSettings {
   language: WordLanguage;
   bareWord: boolean;
   cleanup: boolean;
+  roast: boolean;
   difficulty: Difficulty;
   creativity: CreativitySettings;
   emojiPack: EmojiPackConfig | null;
@@ -29,6 +30,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   language: DEFAULT_LANGUAGE,
   bareWord: false,
   cleanup: false,
+  roast: false,
   difficulty: 'normal',
   creativity: { enabled: false, configured: false, mode: 'time', seconds: 3600, count: 20 },
   emojiPack: null,
@@ -265,7 +267,9 @@ export function getSettings(db: Database.Database, chatId: number): ChatSettings
     ...structuredClone(DEFAULT_SETTINGS),
     ...parsed,
     language: isWordLanguage(parsed.language) ? parsed.language : DEFAULT_SETTINGS.language,
+    bareWord: parsed.bareWord === true,
     cleanup: parsed.cleanup === true,
+    roast: parsed.roast === true,
     creativity,
     emojiPack: isEmojiPackConfig(parsed.emojiPack) ? parsed.emojiPack : null,
     tournamentMaxFails:

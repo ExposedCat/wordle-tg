@@ -53,6 +53,46 @@ export function pointsForGuessNumber(n: number): number {
   return MAX_GUESSES + 1 - n; // guess #1 → 6 pts … guess #6 → 1 pt
 }
 
+function roundedQualityValue(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function logGuessQuality(input: {
+  chatId: number;
+  game: GameRow;
+  user: UserRef;
+  word: string;
+  guessNumber: number;
+  quality?: GuessQuality;
+}): void {
+  if (process.env.NODE_ENV === 'test') return;
+
+  const base = {
+    chatId: input.chatId,
+    gameId: input.game.id,
+    kind: input.game.kind,
+    userId: input.user.id,
+    word: input.word.toUpperCase(),
+    guessNumber: input.guessNumber,
+  };
+
+  console.debug(
+    '[guess-quality]',
+    JSON.stringify(
+      input.quality
+        ? {
+            ...base,
+            possible: input.quality.possibleCount,
+            remaining: input.quality.actualRemaining,
+            average: roundedQualityValue(input.quality.averageRemaining),
+            points: input.quality.points,
+            belowAverage: input.quality.actualRemaining > input.quality.averageRemaining,
+          }
+        : { ...base, quality: 'skipped' }
+    )
+  );
+}
+
 export interface TournamentRejectStatus {
   forfeitedPlayer: TournamentPlayer;
   failCount: number;
@@ -76,6 +116,7 @@ export type GuessOutcome =
       type: 'accepted';
       game: GameRow;
       score: TileStatus[];
+      quality?: GuessQuality;
       guessNumber: number;
       solved: boolean;
       lost: boolean;
@@ -217,6 +258,7 @@ export class GameService {
     const guessNumber = game.guesses.length;
     const solved = word === game.answer;
     const lost = !solved && guessNumber >= MAX_GUESSES;
+    logGuessQuality({ chatId, game, user, word, guessNumber, quality });
 
     if (solved) game.status = 'solved';
     if (lost) game.status = 'lost';
@@ -228,7 +270,7 @@ export class GameService {
       if (lost) recordUsedWord(this.db, chatId, game.answer); // revealed answer is burned too
     }
 
-    const outcome: GuessOutcome = { type: 'accepted', game, score, guessNumber, solved, lost };
+    const outcome: GuessOutcome = { type: 'accepted', game, score, quality, guessNumber, solved, lost };
 
     if (isDuel) {
       outcome.duel = this.applyDuelProgress(game, user, solved, lost, guessNumber);

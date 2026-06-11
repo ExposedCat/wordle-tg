@@ -82,6 +82,7 @@ Tournament
 Misc
 /auto · guess without /w ${toggleIcon(s.bareWord)}
 /cleanup · remove old boards ${toggleIcon(s.cleanup)}
+/roast · roast below-average guesses ${toggleIcon(s.roast)}
 /usepack NAME · custom emoji pack ${toggleIcon(s.emojiPack !== null)}
 
 Current language: ${LANGUAGE_LABELS[s.language]}`;
