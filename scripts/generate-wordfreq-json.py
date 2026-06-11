@@ -171,7 +171,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--possible-limit",
         type=int,
-        default=15_000,
+        default=2_000,
         help="Maximum number of possible answer words per language/length.",
     )
     parser.add_argument(

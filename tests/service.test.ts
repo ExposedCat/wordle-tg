@@ -797,8 +797,8 @@ describe('word list sanity', () => {
   });
 
   it('has the expected shape', () => {
-    expect(ANSWERS.length).toBeGreaterThan(2000);
-    expect(ANSWERS_RU.length).toBeGreaterThan(2000);
+    expect(ANSWERS.length).toBe(2000);
+    expect(ANSWERS_RU.length).toBe(2000);
     for (const w of ['water', 'crane', 'trace', 'abbey', 'eater', 'racer']) {
       expect(isValidWord(w)).toBe(true);
     }
