@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDb } from '../src/db.js';
 import { isGuessText } from '../src/engine/language.js';
-import { ANSWERS, ANSWERS_RU, isValidWord } from '../src/engine/words.js';
+import { ANSWERS, ANSWERS_RU, answersForLanguage, isValidWord } from '../src/engine/words.js';
 import { GameService, MAX_GUESSES, pointsForGuessNumber, roundOrder } from '../src/game/service.js';
 
 const CHAT = -100500;
@@ -61,7 +61,7 @@ describe('basic game flow', () => {
   it('rejects bad input', () => {
     expect(svc.submitGuess(CHAT, A, 'crane').type).toBe('no_game');
     const game = svc.startGame(CHAT)!;
-    expect(svc.submitGuess(CHAT, A, 'zzzzz').type).toBe('not_a_word');
+    expect(svc.submitGuess(CHAT, A, '12345').type).toBe('not_a_word');
     const [w1] = wrongWords(game.answer, 1);
     svc.submitGuess(CHAT, A, w1);
     expect(svc.submitGuess(CHAT, B, w1).type).toBe('already_guessed');
@@ -88,6 +88,26 @@ describe('basic game flow', () => {
     const [w1] = wrongWords(game.answer, 1);
     expect(svc.submitGuess(CHAT, A, w1).type).toBe('accepted');
     expect(svc.activeGame(CHAT)?.language).toBe('en');
+  });
+
+  it('uses the selected word length for new games and guesses', () => {
+    const s = svc.settings(CHAT);
+    s.wordLength = 4;
+    svc.saveSettings(CHAT, s);
+
+    const game = svc.startGame(CHAT)!;
+    expect(game.answer).toHaveLength(4);
+    expect(svc.submitGuess(CHAT, A, game.answer.slice(0, 3)).type).toBe('not_a_word');
+    expect(svc.submitGuess(CHAT, A, game.answer).type).toBe('accepted');
+  });
+
+  it('keeps an active game on the word length it started with', () => {
+    const game = svc.startGame(CHAT)!;
+    expect(svc.setWordLength(CHAT, 4)).toBeTruthy();
+
+    const [w1] = wrongWords(game.answer, 1);
+    expect(svc.submitGuess(CHAT, A, w1).type).toBe('accepted');
+    expect(svc.activeGame(CHAT)?.answer.length).toBe(5);
   });
 
   it('loses after 6 wrong guesses and resets streak', () => {
@@ -342,7 +362,7 @@ describe('tournaments', () => {
     const started = svc.startTournament(t0.id);
     expect(started).not.toBe('too_few');
 
-    const r1 = svc.submitGuess(CHAT, A, 'zzzzz');
+    const r1 = svc.submitGuess(CHAT, A, '12345');
     expect(r1.type).toBe('not_a_word');
     if (r1.type !== 'not_a_word') throw new Error('expected rejection');
     expect(r1.rejectStatus?.remaining).toBe(1);
@@ -350,7 +370,7 @@ describe('tournaments', () => {
     expect(r1.rejectStatus?.forfeit).toBeUndefined();
     expect(svc.openTournament(CHAT)?.fail_count).toBe(1);
 
-    const r2 = svc.submitGuess(CHAT, A, 'xxxxx');
+    const r2 = svc.submitGuess(CHAT, A, '67890');
     expect(r2.type).toBe('not_a_word');
     if (r2.type !== 'not_a_word') throw new Error('expected rejection');
     expect(r2.rejectStatus?.remaining).toBe(0);
@@ -388,8 +408,8 @@ describe('tournaments', () => {
     svc.joinTournament(t0.id, B);
     svc.startTournament(t0.id);
 
-    expect(svc.submitGuess(CHAT, A, 'zzzzz').type).toBe('not_a_word');
-    const r = svc.submitGuess(CHAT, A, 'xxxxx');
+    expect(svc.submitGuess(CHAT, A, '12345').type).toBe('not_a_word');
+    const r = svc.submitGuess(CHAT, A, '67890');
     expect(r.type).toBe('not_a_word');
     if (r.type !== 'not_a_word') throw new Error('expected rejection');
     expect(r.rejectStatus).toBeUndefined();
@@ -563,10 +583,12 @@ describe('duels', () => {
 });
 
 describe('word list sanity', () => {
-  it('accepts English and Cyrillic 5-letter guess text for /w and /auto', () => {
+  it('accepts English and Cyrillic guess text for /w and /auto at the selected length', () => {
     expect(isGuessText('crane')).toBe(true);
     expect(isGuessText('ЗДЕСЬ')).toBe(true);
     expect(isGuessText('здесь')).toBe(true);
+    expect(isGuessText('дом', 3)).toBe(true);
+    expect(isGuessText('дома', 3)).toBe(false);
     expect(isGuessText('дом')).toBe(false);
     expect(isGuessText('12345')).toBe(false);
   });
@@ -580,7 +602,20 @@ describe('word list sanity', () => {
     for (const w of ['здесь', 'когда', 'жизнь']) {
       expect(isValidWord(w, 'ru')).toBe(true);
     }
-    expect(isValidWord('zzzzz')).toBe(false);
+    expect(isValidWord('12345')).toBe(false);
     expect(isValidWord('crane', 'ru')).toBe(false);
+  });
+
+  it('loads JSON word data for all supported lengths', () => {
+    for (let length = 3; length <= 10; length++) {
+      const english = answersForLanguage('en', length);
+      const russian = answersForLanguage('ru', length);
+      expect(english.length).toBeGreaterThan(100);
+      expect(russian.length).toBeGreaterThan(100);
+      expect(english[0]).toHaveLength(length);
+      expect(russian[0]).toHaveLength(length);
+      expect(isValidWord(english[0], 'en', length)).toBe(true);
+      expect(isValidWord(russian[0], 'ru', length)).toBe(true);
+    }
   });
 });

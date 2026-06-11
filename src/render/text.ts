@@ -26,7 +26,7 @@ export function textBoard(game: GameRow, opts: { revealAnswer?: boolean; include
   }
   const remaining = MAX_GUESSES - game.guesses.length;
   if (game.status === 'active') {
-    for (let i = 0; i < remaining; i++) lines.push('⬜⬜⬜⬜⬜'); // ⬜ empty rows
+    for (let i = 0; i < remaining; i++) lines.push('⬜'.repeat(game.answer.length)); // empty rows
   }
   let out = lines.join('\n');
   if ((opts.includeKeyboard ?? true) && (game.status !== 'active' || game.guesses.length > 0)) {

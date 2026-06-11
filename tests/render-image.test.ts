@@ -84,6 +84,11 @@ describe('sticker rendering', () => {
     expectWebp(renderKeyboardSticker(game('здесь', ['когда'], 'ru')));
   });
 
+  it('renders variable-length board stickers', () => {
+    expectWebp(renderBoardSticker(game('cat', ['the'])));
+    expectWebp(renderBoardSticker(game('basketball', ['waterfalls'])));
+  });
+
   it('renders compare stickers at full Telegram sticker size', async () => {
     const sticker = await renderCompareSticker(
       {
@@ -122,18 +127,24 @@ describe('sticker rendering', () => {
     expect(webpDimensions(sticker)).toEqual({ width: 512, height: 512 });
   });
 
-  it('keeps the board sticker at full Telegram sticker size as the keyboard shrinks', () => {
-    const sparseKeyboard = game('water', ['quick', 'nymph', 'blogs', 'fjord']);
+  it('keeps board sticker width fixed and lets height follow the board aspect ratio', () => {
+    const classic = webpDimensions(renderBoardSticker(game('water', ['trace'])));
+    const wide = webpDimensions(renderBoardSticker(game('basketball', ['waterfalls'])));
 
-    expect(webpDimensions(renderBoardSticker(sparseKeyboard))).toEqual({ width: 512, height: 512 });
+    expect(classic.width).toBe(512);
+    expect(classic.height).toBeGreaterThan(512);
+    expect(wide.width).toBe(512);
+    expect(wide.height).toBeLessThan(512);
   });
 
-  it('keeps board sticker margins transparent except for width anchor pixels', async () => {
+  it('keeps board sticker corners transparent except for width anchor pixels', async () => {
     const row = game('water', ['trace']);
     const sticker = renderBoardSticker(row);
+    const dimensions = webpDimensions(sticker);
+    const anchorY = Math.floor(dimensions.height / 2);
 
     expect(await pixelAlpha(sticker, 0, 0)).toBe(0);
-    expect(await pixelAlpha(sticker, 0, 256)).toBeGreaterThan(0);
-    expect(await pixelAlpha(sticker, 511, 256)).toBeGreaterThan(0);
+    expect(await pixelAlpha(sticker, 0, anchorY)).toBeGreaterThan(0);
+    expect(await pixelAlpha(sticker, 511, anchorY)).toBeGreaterThan(0);
   });
 });

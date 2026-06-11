@@ -3,7 +3,7 @@ import { Bot, Context, InlineKeyboard, InputFile } from 'grammy';
 import { BOT_TOKEN } from '../config.js';
 import { GameRow, TournamentRow } from '../db.js';
 import type { GuessQuality } from '../engine/guess-quality.js';
-import { isGuessText, LANGUAGE_LABELS, type WordLanguage } from '../engine/language.js';
+import { MAX_WORD_LENGTH, MIN_WORD_LENGTH, isGuessText, LANGUAGE_LABELS, type WordLanguage } from '../engine/language.js';
 import { GameService, MAX_GUESSES, roundOrder, type TournamentRejectStatus, type UserRef } from '../game/service.js';
 import { describeWordMeaning, hasOpenAIKey, roastBadGuess } from '../llm.js';
 import { emojiPackFromStickers, escapeHtml, packNameCandidates } from '../render/emoji-pack.js';
@@ -342,7 +342,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
 
     switch (out.type) {
       case 'no_game':
-        if (!opts.silentNoGame) await ctx.reply(`${NO_ACTIVE} No game running here. Send /play to start one!`, { parse_mode: 'HTML' });
+        if (!opts.silentNoGame) await ctx.reply(`${NO_ACTIVE} No game running here. Send /wordle to start one!`, { parse_mode: 'HTML' });
         return;
       case 'not_a_word':
         await ctx.reply(`${NOT_ALLOWED} "${escapeHtml(out.word.toUpperCase())}" is not allowed.${tournamentRejectStatusHtml(out.rejectStatus)}`, {
@@ -519,12 +519,16 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     return `${FORBIDDEN} ${text}`;
   }
 
-  function playGuessInstruction(bareWord: boolean): string {
-    return bareWord ? 'Send a word to guess' : 'Guess with /w [WORD]';
+  function expectedGuessLength(chatId: number): number {
+    return svc.activeGame(chatId)?.answer.length ?? svc.settings(chatId).wordLength;
   }
 
-  function autoGuessInstruction(bareWord: boolean): string {
-    return bareWord ? 'Send a word to guess' : 'Use /w [WORD] to guess';
+  function playGuessInstruction(bareWord: boolean, length: number): string {
+    return bareWord ? `Send a ${length}-letter word to guess` : `Guess with /w [${length}-letter word]`;
+  }
+
+  function autoGuessInstruction(bareWord: boolean, length: number): string {
+    return bareWord ? `Send a ${length}-letter word to guess` : `Use /w [${length}-letter word] to guess`;
   }
 
   async function setLanguage(ctx: Context, language: WordLanguage): Promise<void> {
@@ -533,6 +537,18 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const active = svc.activeGame(chatId);
     const suffix = active && active.language !== language ? `\nCurrent game stays ${LANGUAGE_LABELS[active.language]}.` : '';
     await ctx.reply(tickText(`${LANGUAGE_LABELS[language]} selected${suffix}`), { parse_mode: 'HTML' });
+  }
+
+  async function setWordLength(ctx: Context): Promise<void> {
+    const chatId = ctx.chat!.id;
+    const value = String(ctx.match ?? '').trim();
+    const length = parseInt(value, 10);
+    if (!/^\d+$/.test(value) || !svc.setWordLength(chatId, length)) {
+      return void (await ctx.reply(`Usage: /length N, where N is ${MIN_WORD_LENGTH}-${MAX_WORD_LENGTH}`));
+    }
+    const active = svc.activeGame(chatId);
+    const suffix = active && active.answer.length !== length ? `\nCurrent game stays ${active.answer.length} letters.` : '';
+    await ctx.reply(tickText(`Word length set to ${length}${suffix}`), { parse_mode: 'HTML' });
   }
 
   // ---------- commands ----------
@@ -550,8 +566,8 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
       if (res === 'not_found') return void (await ctx.reply('This duel no longer exists or is already finished.'));
       if (res === 'full') return void (await ctx.reply('This duel already has two players.'));
       if (res === 'already_playing') return void (await ctx.reply('You already played your board for this duel.'));
-      if (res === 'own_game_running') return void (await ctx.reply('Finish your current game here first (/giveup to abandon it).'));
-      await ctx.reply('⚔️ Duel on! Same word as your opponent, 6 tries. Just type your 5-letter guesses.');
+      if (res === 'own_game_running') return void (await ctx.reply('Finish your current game here first (/stop to abandon it).'));
+      await ctx.reply(`⚔️ Duel on! Same word as your opponent, 6 tries. Just type your ${res.game.answer.length}-letter guesses.`);
       await sendBoard(ctx, ctx.chat.id, res.game, 'Your duel board:');
       return;
     }
@@ -562,12 +578,13 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
 
   bot.command('en', (ctx) => setLanguage(ctx, 'en'));
   bot.command('ru', (ctx) => setLanguage(ctx, 'ru'));
+  bot.command('length', (ctx) => setWordLength(ctx));
 
   bot.command('auto', async (ctx) => {
     const s = svc.settings(ctx.chat.id);
     s.bareWord = !s.bareWord;
     svc.saveSettings(ctx.chat.id, s);
-    const text = `Guess without /w ${s.bareWord ? 'enabled' : 'disabled'}\n${autoGuessInstruction(s.bareWord)}`;
+    const text = `Guess without /w ${s.bareWord ? 'enabled' : 'disabled'}\n${autoGuessInstruction(s.bareWord, expectedGuessLength(ctx.chat.id))}`;
     await ctx.reply(s.bareWord ? tickText(text) : forbiddenText(text), { parse_mode: 'HTML' });
   });
 
@@ -617,20 +634,21 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     await ctx.reply(`Could not use emoji pack: ${message}`);
   });
 
-  bot.command('play', async (ctx) => {
+  bot.command('wordle', async (ctx) => {
     const chatId = ctx.chat.id;
     const t = svc.openTournament(chatId);
-    if (t) return void (await ctx.reply('A tournament is open in this chat — finish it with /giveup first.'));
+    if (t) return void (await ctx.reply('A tournament is open in this chat — finish it with /stop first.'));
     const game = svc.startGame(chatId);
-    if (!game) return void (await ctx.reply('A game is already running! Check /board or /giveup to abandon it.'));
+    if (!game) return void (await ctx.reply('A game is already running! Check /board or /stop to abandon it.'));
     const s = svc.settings(chatId);
-    await sendBoard(ctx, chatId, game, `${playGuessInstruction(s.bareWord)}`);
+    await sendBoard(ctx, chatId, game, `${playGuessInstruction(s.bareWord, game.answer.length)}`);
   });
 
   bot.command('w', async (ctx) => {
     const word = (ctx.match ?? '').trim();
-    if (!isGuessText(word)) {
-      return void (await ctx.reply('Usage: /w WORD (a 5-letter word)'));
+    const length = expectedGuessLength(ctx.chat.id);
+    if (!isGuessText(word, length)) {
+      return void (await ctx.reply(`Usage: /w WORD (a ${length}-letter word)`));
     }
     await handleGuess(ctx, word);
   });
@@ -641,7 +659,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const t = svc.openTournament(chatId);
     if (!game) {
       if (t && t.status === 'joining') return void (await ctx.reply(lobbyText(t), { parse_mode: 'HTML', reply_markup: lobbyKeyboard(t) }));
-      return void (await ctx.reply(`${NO_ACTIVE} No active game. Send /play to start one!`, { parse_mode: 'HTML' }));
+      return void (await ctx.reply(`${NO_ACTIVE} No active game. Send /wordle to start one!`, { parse_mode: 'HTML' }));
     }
     if (t && t.status === 'active') {
       await sendBoard(ctx, chatId, game, '', { footerHtml: tournamentStatusHtml(t), hideKeyboard: true });
@@ -650,7 +668,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     await sendBoard(ctx, chatId, game, '');
   });
 
-  bot.command('giveup', async (ctx) => {
+  bot.command('stop', async (ctx) => {
     const res = svc.giveUp(ctx.chat.id);
     if (!res) return void (await ctx.reply(`${NO_ACTIVE} No active game or tournament to give up.`, { parse_mode: 'HTML' }));
     const meaning = res.answer ? await wordMeaning(res.answer) : undefined;
@@ -660,7 +678,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     await ctx.reply(msg, { parse_mode: 'HTML' });
   });
 
-  bot.command('stats', async (ctx) => {
+  bot.command('profile', async (ctx) => {
     const user = userRef(ctx);
     const row = svc.statsFor(ctx.chat.id, user.id);
     await ctx.reply(statsText(row, user.name, chatDisplayName(ctx)), { parse_mode: 'HTML' });
@@ -827,10 +845,10 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     await ctx.reply(tickText(`Tournament turn timer set to ${humanTurnTime(seconds)}`), { parse_mode: 'HTML' });
   });
 
-  bot.command('tournament', async (ctx) => {
+  bot.command('round', async (ctx) => {
     const chatId = ctx.chat.id;
     const arg = (ctx.match ?? '').trim().toLowerCase();
-    if (arg && !/^\d+$/.test(arg)) return void (await ctx.reply('Usage: /tournament [N]. Use /giveup to end an open tournament.'));
+    if (arg && !/^\d+$/.test(arg)) return void (await ctx.reply('Usage: /round [N]. Use /stop to end an open tournament.'));
     const existing = svc.openTournament(chatId);
     if (existing) {
       if (existing.status === 'joining')
@@ -839,15 +857,15 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     }
     const parsedRounds = parseInt(arg, 10);
     const rounds = Number.isFinite(parsedRounds) && parsedRounds >= 1 && parsedRounds <= 25 ? parsedRounds : 0;
-    if (svc.activeGame(chatId)) return void (await ctx.reply('Finish the current game first (/giveup to abandon it).'));
+    if (svc.activeGame(chatId)) return void (await ctx.reply('Finish the current game first (/stop to abandon it).'));
     const t = svc.createTournament(chatId, rounds, userRef(ctx), messageThreadId(ctx) ?? null);
     if (!t) return void (await ctx.reply('Could not create a tournament right now.'));
     await ctx.reply(lobbyText(t), { parse_mode: 'HTML', reply_markup: lobbyKeyboard(t) });
   });
 
-  bot.command('challenge', async (ctx) => {
+  bot.command('duel', async (ctx) => {
     if (ctx.chat.type === 'private') {
-      return void (await ctx.reply('Use /challenge in a group — that is where I announce the winner!'));
+      return void (await ctx.reply('Use /duel in a group — that is where I announce the winner!'));
     }
     const user = userRef(ctx);
     const d = svc.createDuel(ctx.chat.id, user, messageThreadId(ctx) ?? null);
@@ -902,7 +920,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   bot.on('message:text', async (ctx) => {
     const text = ctx.message.text.trim();
     if (text.startsWith('/')) return;
-    if (!isGuessText(text)) return;
+    if (!isGuessText(text, expectedGuessLength(ctx.chat.id))) return;
     if (!svc.settings(ctx.chat.id).bareWord) return;
     await handleGuess(ctx, text, { silentNoGame: true });
   });

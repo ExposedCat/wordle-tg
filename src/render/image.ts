@@ -21,7 +21,6 @@ const COLORS = {
 
 const TILE = 62;
 const TILE_GAP = 6;
-const BOARD_COLS = 5;
 const PAD = 24;
 
 const KEY_W = 42;
@@ -48,7 +47,8 @@ type VisibleKey = {
 
 function renderBoardCanvas(game: GameRow, opts: { background?: boolean; pad?: number } = {}): Canvas {
   const pad = opts.pad ?? PAD;
-  const boardW = BOARD_COLS * TILE + (BOARD_COLS - 1) * TILE_GAP;
+  const boardCols = game.answer.length;
+  const boardW = boardCols * TILE + (boardCols - 1) * TILE_GAP;
   const boardH = MAX_GUESSES * TILE + (MAX_GUESSES - 1) * TILE_GAP;
   const width = boardW + pad * 2;
   const height = boardH + pad * 2;
@@ -66,7 +66,7 @@ function renderBoardCanvas(game: GameRow, opts: { background?: boolean; pad?: nu
   const boardX = (width - boardW) / 2;
   const scores: TileStatus[][] = game.guesses.map((g) => scoreGuess(game.answer, g.word));
   for (let row = 0; row < MAX_GUESSES; row++) {
-    for (let col = 0; col < BOARD_COLS; col++) {
+    for (let col = 0; col < boardCols; col++) {
       const x = boardX + col * (TILE + TILE_GAP);
       const y = pad + row * (TILE + TILE_GAP);
       if (row < game.guesses.length) {
@@ -94,19 +94,16 @@ export function renderBoardImage(game: GameRow): Buffer {
 
 export function renderBoardSticker(game: GameRow): Buffer {
   const source = renderBoardCanvas(game, { background: false, pad: 0 });
-  const scale = Math.min(STICKER_WIDTH / source.width, STICKER_WIDTH / source.height);
-  const width = Math.round(source.width * scale);
+  const scale = STICKER_WIDTH / source.width;
   const height = Math.round(source.height * scale);
-  const sticker = createCanvas(STICKER_WIDTH, STICKER_WIDTH);
+  const sticker = createCanvas(STICKER_WIDTH, height);
   const ctx = sticker.getContext('2d');
-  const x = Math.round((STICKER_WIDTH - width) / 2);
-  const y = Math.round((STICKER_WIDTH - height) / 2);
 
-  anchorStickerWidth(ctx);
+  anchorStickerWidth(ctx, height);
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(source, x, y, width, height);
+  ctx.drawImage(source, 0, 0, STICKER_WIDTH, height);
 
   return encodeSticker(sticker);
 }
@@ -210,8 +207,8 @@ function encodeSticker(canvas: Canvas): Buffer {
   return canvas.toBuffer('image/webp', WEBP_QUALITY);
 }
 
-function anchorStickerWidth(ctx: import('@napi-rs/canvas').SKRSContext2D): void {
-  const y = Math.floor(STICKER_WIDTH / 2);
+function anchorStickerWidth(ctx: import('@napi-rs/canvas').SKRSContext2D, height = STICKER_WIDTH): void {
+  const y = Math.min(height - 1, Math.floor(height / 2));
   ctx.fillStyle = COLORS.bg;
   ctx.fillRect(0, y, 1, 1);
   ctx.fillRect(STICKER_WIDTH - 1, y, 1, 1);

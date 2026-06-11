@@ -1,19 +1,22 @@
 import { ChatSettings, Difficulty, StatsRow, TournamentRow } from '../db.js';
 import type { HardModeViolation } from '../engine/hardmode.js';
-import { LANGUAGE_LABELS } from '../engine/language.js';
+import { DEFAULT_WORD_LENGTH, LANGUAGE_LABELS } from '../engine/language.js';
 import { scoreGuess, type TileStatus } from '../engine/score.js';
 import { roundOrder } from '../game/service.js';
 import { escapeHtml, formatTileLetter, type EmojiPackConfig, type TileColor } from '../render/emoji-pack.js';
 
 export const HELP_TEXT = `<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji> Wordle
 
-/play · start a new game
-/tournament [N] · start a tournament
+/wordle · start a new game
+/round [N] · start a tournament
 /w [WORD] · guess a word
 /board · see current game board
-/stats · see your stats
+/stop · end the current game
+/profile · see your stats
 /compare · compare with reply/name
+/duel · challenge another player
 /en /ru · select word language
+/length N · select 3-10 letter words
 
 <tg-emoji emoji-id="5879813604068298387">❗</tg-emoji> See /settings for cool modes and preferences!`;
 
@@ -62,6 +65,7 @@ export function settingsText(s: ChatSettings): string {
   return `Language
 /en · English${tick(s.language === 'en')}
 /ru · Russian${tick(s.language === 'ru')}
+/length N · word length: ${s.wordLength}
 
 Mode /mode_help
 /normal · normal mode${tick(s.difficulty === 'normal')}
@@ -85,7 +89,7 @@ Misc
 /roast · roast below-average guesses ${toggleIcon(s.roast)}
 /usepack NAME · custom emoji pack ${toggleIcon(s.emojiPack !== null)}
 
-Current language: ${LANGUAGE_LABELS[s.language]}`;
+Current language: ${LANGUAGE_LABELS[s.language]} · ${s.wordLength} letters`;
 }
 
 export function modeHelpText(s: ChatSettings): string {
@@ -233,7 +237,7 @@ function winningLine(label: string, count: number, maxCount: number): string {
 }
 
 export function statsText(s: StatsRow, displayName: string, chatName: string): string {
-  const totalLetters = s.guesses_total * 5;
+  const totalLetters = s.guesses_total * DEFAULT_WORD_LENGTH;
   const maxDist = Math.max(s.dist1, s.dist2, s.dist3, s.dist4, s.dist5, s.dist6);
 
   return `${STATS_USER} ${escapeHtml(displayName)} · ${escapeHtml(chatName)}

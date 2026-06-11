@@ -1,6 +1,6 @@
 # telewordle
 
-A Wordle bot for Telegram groups. Random 5-letter word, 6 tries, the whole chat plays together — with sticker or text boards, tournaments, duels, hard/super-hard difficulty, LLM roasts for bad guesses, and a "creativity mode" that bans recently used words.
+A Wordle bot for Telegram groups. Random 3-10 letter word, 6 tries, the whole chat plays together — with sticker or text boards, tournaments, duels, hard/super-hard difficulty, LLM roasts for bad guesses, and a "creativity mode" that bans recently used words.
 
 When `OPENAI_API_KEY` is configured, finished games append a concise LLM-generated meaning after the revealed or completed word. If `/roast` is enabled, below-average guesses get a one-sentence LLM roast in reply.
 
@@ -12,7 +12,7 @@ When `OPENAI_API_KEY` is configured, finished games append a concise LLM-generat
    npm install
    npm start
    ```
-3. Add the bot to a group and send `/play`.
+3. Add the bot to a group and send `/wordle`.
 
 > **Bare-word guessing in groups** (typing `crane` instead of `/w crane`) requires the bot to see normal messages: either disable privacy mode in @BotFather (`/setprivacy` → Disable) **before** adding the bot to the group, or make the bot a group admin.
 
@@ -20,17 +20,18 @@ When `OPENAI_API_KEY` is configured, finished games append a concise LLM-generat
 
 | Command | What it does |
 |---|---|
-| `/play` | Start a new game (random word, 6 tries, shared board) |
+| `/wordle` | Start a new game (random word, 6 tries, shared board) |
 | `/w WORD` | Submit a guess |
+| `/length N` | Select word length for new games (3-10, default 5) |
 | `/auto` | Toggle bare-word guessing in this chat |
 | `/cleanup` | Toggle removal of the previous board, keyboard, and status message |
 | `/roast` | Toggle LLM roasts for below-average guesses |
 | `/board` | Show the current board (and tournament standings) |
-| `/giveup` | Abandon the game and reveal the word, or cancel an open tournament |
-| `/stats` | Your stats in this chat |
+| `/stop` | Abandon the game and reveal the word, or cancel an open tournament |
+| `/profile` | Your stats in this chat |
 | `/global` | Your stats across all chats |
-| `/tournament [N]` | Start a turn-based tournament |
-| `/challenge` | Duel: same word for two players, fewest guesses wins |
+| `/round [N]` | Start a turn-based tournament |
+| `/duel` | Duel: same word for two players, fewest guesses wins |
 | `/usepack NAME` | Use an existing custom emoji pack for this chat |
 | `/creativity` | Toggle recent-word bans, or configure them with a frame |
 | `/normal` | Set normal mode |
@@ -45,7 +46,8 @@ When `OPENAI_API_KEY` is configured, finished games append a concise LLM-generat
 
 ## Settings (`/settings`, per chat)
 
-- **Bare-word guessing** (default **off**) — toggle with `/auto`. When on, any message that is a valid 5-letter word counts as a guess. Unknown words get a "not in my dictionary" notice.
+- **Word length** (default **5**) — set with `/length N`, where `N` is 3-10. Active games keep the length they started with; new games use the selected length.
+- **Bare-word guessing** (default **off**) — toggle with `/auto`. When on, any message that matches the current game or selected word length counts as a guess. Unknown words get a "not in my dictionary" notice.
 - **Cleanup** (default **off**) — toggle with `/cleanup`. When on, each newly posted board removes the previous board sticker, keyboard sticker, and status message in the same chat/topic.
 - **Roasts** (default **off**) — toggle with `/roast`. When on and `OPENAI_API_KEY` is configured, guesses that leave more words than the current average get a one-sentence roast in reply.
 - **Board** — classic Wordle board as a WebP sticker, followed by a centered WebP keyboard sticker with absent letters hidden. Result/status text is sent afterward only when needed:
@@ -69,11 +71,11 @@ When `OPENAI_API_KEY` is configured, finished games append a concise LLM-generat
 
 ## Tournaments
 
-`/tournament 3` opens a lobby (join via button, creator presses Start). Use `/giveup` to cancel an open or active tournament. Players guess strictly in turn order, and the order rotates every round so nobody is always first. Too many rejected attempts on a turn forfeits that turn, based on `/fails`. Solving the word scores points by how early it fell: guess #1 = 6 pts … guess #6 = 1 pt. After the last round the bot posts the scoreboard and the winner.
+`/round 3` opens a lobby (join via button, creator presses Start). Use `/stop` to cancel an open or active tournament. Players guess strictly in turn order, and the order rotates every round so nobody is always first. Too many rejected attempts on a turn forfeits that turn, based on `/fails`. Solving the word scores points by how early it fell: guess #1 = 6 pts … guess #6 = 1 pt. After the last round the bot posts the scoreboard and the winner.
 
 ## Duels
 
-`/challenge` in a group posts a button with a deep link. The challenger and the first taker each play the **same secret word** privately with the bot; fewest guesses wins, speed breaks ties. The result (and the word) is announced back in the group.
+`/duel` in a group posts a button with a deep link. The challenger and the first taker each play the **same secret word** privately with the bot; fewest guesses wins, speed breaks ties. The result (and the word) is announced back in the group.
 
 ## Stats
 
@@ -81,7 +83,14 @@ Per user, per chat: games played/won, win rate, winning guesses, current/best st
 
 ## Word lists
 
-`data/answers.txt` (2,314 curated answers) and `data/allowed.txt` (10,656 additional accepted guesses) — the classic Wordle lists.
+Word lists live in `data/{en,ru}-{3..10}.json`. Each file contains `valid` accepted guesses and frequency-ordered `possible` answer words for that language and length.
+
+```sh
+python -m pip install wordfreq
+python scripts/generate-wordfreq-json.py
+```
+
+The generator refreshes those JSON files from wordfreq's `large` list, with up to the top 15k `possible` answer words per language and length.
 
 ## Development
 

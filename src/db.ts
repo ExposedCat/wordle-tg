@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { DEFAULT_LANGUAGE, isWordLanguage, type WordLanguage } from './engine/language.js';
+import { DEFAULT_LANGUAGE, DEFAULT_WORD_LENGTH, isSupportedWordLength, isWordLanguage, type WordLanguage } from './engine/language.js';
 import { isEmojiPackConfig, type EmojiPackConfig } from './render/emoji-pack.js';
 
 export interface CreativitySettings {
@@ -16,6 +16,7 @@ export type Difficulty = 'normal' | 'hard' | 'superhard';
 
 export interface ChatSettings {
   language: WordLanguage;
+  wordLength: number;
   bareWord: boolean;
   cleanup: boolean;
   roast: boolean;
@@ -30,6 +31,7 @@ export interface ChatSettings {
 
 export const DEFAULT_SETTINGS: ChatSettings = {
   language: DEFAULT_LANGUAGE,
+  wordLength: DEFAULT_WORD_LENGTH,
   bareWord: false,
   cleanup: false,
   roast: false,
@@ -280,6 +282,7 @@ export function getSettings(db: Database.Database, chatId: number): ChatSettings
     ...structuredClone(DEFAULT_SETTINGS),
     ...parsed,
     language: isWordLanguage(parsed.language) ? parsed.language : DEFAULT_SETTINGS.language,
+    wordLength: isSupportedWordLength(parsed.wordLength) ? parsed.wordLength : DEFAULT_SETTINGS.wordLength,
     bareWord: parsed.bareWord === true,
     cleanup: parsed.cleanup === true,
     roast: parsed.roast === true,
