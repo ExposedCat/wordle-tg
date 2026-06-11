@@ -10,6 +10,12 @@ services:
     environment:
       BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN in .env or your shell}
       DB_PATH: /data/telewordle.db
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_API_BASE_URL: ${AI_API_BASE_URL:-}
+      AI_MODEL: ${AI_MODEL:-}
     volumes:
       - telewordle-data:/data
 

@@ -11,6 +11,7 @@ import { renderBoardSticker, renderCompareSticker, renderKeyboardSticker } from 
 import {
   HELP_TEXT,
   alreadyGuessedText,
+  answerMeaningText,
   answerMeaningSentence,
   creativityHelpText,
   giveUpText,
@@ -22,7 +23,6 @@ import {
   rankLabelHtml,
   settingsText,
 	statsText,
-  wordMeaningSuffix,
 } from './format.js';
 
 const PEOPLE_EMOJI = '<tg-emoji emoji-id="5942877472163892475">👥</tg-emoji>';
@@ -368,7 +368,10 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
 
     if (tournament) {
       const { t, pointsAwarded, roundEnded, tournamentEnded, nextGame, nextPlayer, winners } = tournament;
-      if (solved) lines.push(`🎉 ${user.name} got it in ${guessNumber}/${MAX_GUESSES} +${pointsAwarded}${wordMeaningSuffix(finishedMeaning)}`);
+      if (solved)
+        lines.push(
+          `🎉 ${user.name} got it in ${guessNumber}/${MAX_GUESSES} +${pointsAwarded}. ${answerMeaningText(game.answer, finishedMeaning)}`
+        );
       const nextUpFooter = !roundEnded && nextPlayer ? `Next up ${playerMentionHtml(nextPlayer)}` : undefined;
       await sendBoard(ctx, chatId, game, lines.join('\n'), { footerHtml: nextUpFooter, captionHtml: lost, hideKeyboard: solved });
       await maybeRoastGuess();
@@ -386,7 +389,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     }
 
     if (solved) {
-      lines.push(`🎉 ${user.name} got it in ${guessNumber}/${MAX_GUESSES}${wordMeaningSuffix(finishedMeaning)}`);
+      lines.push(`🎉 ${user.name} got it in ${guessNumber}/${MAX_GUESSES}. ${answerMeaningText(game.answer, finishedMeaning)}`);
     }
 
     if (duel) {
