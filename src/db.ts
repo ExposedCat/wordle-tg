@@ -402,6 +402,39 @@ export function getStats(db: Database.Database, chatId: number, userId: number):
   return row;
 }
 
+export function getGlobalStats(db: Database.Database, userId: number): StatsRow {
+  return db
+    .prepare(
+      `SELECT
+        0 AS chat_id,
+        ? AS user_id,
+        COALESCE(MAX(NULLIF(name, '')), '') AS name,
+        COALESCE(SUM(games_played), 0) AS games_played,
+        COALESCE(SUM(games_won), 0) AS games_won,
+        COALESCE(SUM(solves), 0) AS solves,
+        COALESCE(SUM(guesses_total), 0) AS guesses_total,
+        COALESCE(SUM(greens), 0) AS greens,
+        COALESCE(SUM(yellows), 0) AS yellows,
+        COALESCE(MAX(current_streak), 0) AS current_streak,
+        COALESCE(MAX(best_streak), 0) AS best_streak,
+        COALESCE(SUM(dist1), 0) AS dist1,
+        COALESCE(SUM(dist2), 0) AS dist2,
+        COALESCE(SUM(dist3), 0) AS dist3,
+        COALESCE(SUM(dist4), 0) AS dist4,
+        COALESCE(SUM(dist5), 0) AS dist5,
+        COALESCE(SUM(dist6), 0) AS dist6,
+        MIN(fastest_ms) AS fastest_ms,
+        COALESCE(SUM(tournaments_played), 0) AS tournaments_played,
+        COALESCE(SUM(tournaments_won), 0) AS tournaments_won,
+        COALESCE(SUM(tournament_points), 0) AS tournament_points,
+        COALESCE(SUM(duels_played), 0) AS duels_played,
+        COALESCE(SUM(duels_won), 0) AS duels_won
+       FROM stats
+       WHERE user_id = ?`
+    )
+    .get(userId, userId) as StatsRow;
+}
+
 export function bumpStats(
   db: Database.Database,
   chatId: number,

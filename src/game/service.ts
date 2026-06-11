@@ -8,6 +8,7 @@ import {
   TournamentPlayer,
   TournamentRow,
   bumpStats,
+  getGlobalStats,
   getStats,
   createDuel,
   createGame,
@@ -112,10 +113,16 @@ export class GameService {
     return createGame(this.db, chatId, answer, 'normal');
   }
 
-  /** Abort the current game (and tournament, if any). Returns the revealed answer or null. */
-  giveUp(chatId: number): { answer: string; tournamentCancelled: boolean } | null {
+  /** Abort the current game, or cancel an open tournament lobby. Returns the revealed answer when there is one. */
+  giveUp(chatId: number): { answer: string | null; tournamentCancelled: boolean } | null {
     const game = getActiveGame(this.db, chatId);
-    if (!game) return null;
+    if (!game) {
+      const t = getOpenTournament(this.db, chatId);
+      if (!t || t.status !== 'joining') return null;
+      t.status = 'cancelled';
+      updateTournament(this.db, t);
+      return { answer: null, tournamentCancelled: true };
+    }
     game.status = 'lost';
     game.finished_at = Date.now();
     updateGame(this.db, game);
@@ -233,6 +240,7 @@ export class GameService {
     if (t.status !== 'joining') return 'closed';
     if (!t.players.some((p) => p.userId === userId)) return 'not_in';
     t.players = t.players.filter((p) => p.userId !== userId);
+    if (t.players.length === 0) t.status = 'cancelled';
     updateTournament(this.db, t);
     return getTournament(this.db, t.id);
   }
@@ -493,5 +501,9 @@ export class GameService {
 
   statsFor(chatId: number, userId: number) {
     return getStats(this.db, chatId, userId);
+  }
+
+  globalStatsFor(userId: number) {
+    return getGlobalStats(this.db, userId);
   }
 }

@@ -73,6 +73,31 @@ describe('basic game flow', () => {
     expect(s.current_streak).toBe(0);
   });
 
+  it('aggregates global stats across chats for a user', () => {
+    const otherChat = -100501;
+    const game1 = svc.startGame(CHAT)!;
+    forceAnswer(game1.id, 'water');
+    svc.submitGuess(CHAT, A, 'crane');
+    svc.submitGuess(CHAT, A, 'water');
+
+    const game2 = svc.startGame(otherChat)!;
+    forceAnswer(game2.id, 'water');
+    for (const w of wrongWords('water', MAX_GUESSES)) svc.submitGuess(otherChat, A, w);
+
+    const game3 = svc.startGame(-100502)!;
+    forceAnswer(game3.id, 'water');
+    svc.submitGuess(-100502, B, 'water');
+
+    const s = svc.globalStatsFor(A.id);
+    expect(s.games_played).toBe(2);
+    expect(s.games_won).toBe(1);
+    expect(s.solves).toBe(1);
+    expect(s.guesses_total).toBe(8);
+    expect(s.current_streak).toBe(1);
+    expect(s.best_streak).toBe(1);
+    expect(s.dist2).toBe(1);
+  });
+
   it('giveup reveals the answer', () => {
     expect(svc.giveUp(CHAT)).toBeNull();
     const game = svc.startGame(CHAT)!;
@@ -369,6 +394,25 @@ describe('tournaments', () => {
     expect(res).not.toBe('not_in');
     expect((res as Exclude<typeof res, 'closed' | 'not_in' | null>).players.map((p) => p.userId)).toEqual([A.id]);
     expect(svc.quitTournament(t0.id, B.id)).toBe('not_in');
+  });
+
+  it('cancels an open tournament when the last player quits', () => {
+    const t0 = svc.createTournament(CHAT, 0, A)!;
+
+    const res = svc.quitTournament(t0.id, A.id);
+    expect(res).not.toBe('not_in');
+    const t = res as Exclude<typeof res, 'closed' | 'not_in' | null>;
+    expect(t.players).toEqual([]);
+    expect(t.status).toBe('cancelled');
+    expect(svc.openTournament(CHAT)).toBeNull();
+  });
+
+  it('giveup cancels an open tournament lobby', () => {
+    svc.createTournament(CHAT, 0, A)!;
+
+    const res = svc.giveUp(CHAT);
+    expect(res).toEqual({ answer: null, tournamentCancelled: true });
+    expect(svc.openTournament(CHAT)).toBeNull();
   });
 
   it('cancel: only the creator can', () => {

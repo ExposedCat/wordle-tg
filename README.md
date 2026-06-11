@@ -22,10 +22,10 @@ A Wordle bot for Telegram groups. Random 5-letter word, 6 tries, the whole chat 
 | `/w WORD` | Submit a guess |
 | `/auto` | Toggle bare-word guessing in this chat |
 | `/board` | Show the current board (and tournament standings) |
-| `/giveup` | Abandon the game and reveal the word |
+| `/giveup` | Abandon the game and reveal the word, or cancel an open tournament |
 | `/stats` | Your stats in this chat |
+| `/global` | Your stats across all chats |
 | `/tournament [N]` | Start a turn-based tournament |
-| `/tournament cancel` | Cancel the open tournament (creator only) |
 | `/challenge` | Duel: same word for two players, fewest guesses wins |
 | `/usepack NAME` | Use an existing custom emoji pack for this chat |
 | `/creativity` | Toggle recent-word bans, or configure them with a frame |
@@ -61,7 +61,7 @@ A Wordle bot for Telegram groups. Random 5-letter word, 6 tries, the whole chat 
 
 ## Tournaments
 
-`/tournament 3` opens a lobby (join via button, creator presses Start). Players guess strictly in turn order, and the order rotates every round so nobody is always first. Too many rejected attempts on a turn forfeits that turn, based on `/fails`. Solving the word scores points by how early it fell: guess #1 = 6 pts … guess #6 = 1 pt. After the last round the bot posts the scoreboard and the winner.
+`/tournament 3` opens a lobby (join via button, creator presses Start). Use `/giveup` to cancel an open or active tournament. Players guess strictly in turn order, and the order rotates every round so nobody is always first. Too many rejected attempts on a turn forfeits that turn, based on `/fails`. Solving the word scores points by how early it fell: guess #1 = 6 pts … guess #6 = 1 pt. After the last round the bot posts the scoreboard and the winner.
 
 ## Duels
 

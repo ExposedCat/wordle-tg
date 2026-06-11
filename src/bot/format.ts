@@ -2,7 +2,7 @@ import { ChatSettings, Difficulty, StatsRow, TournamentRow } from '../db.js';
 import type { HardModeViolation } from '../engine/hardmode.js';
 import { scoreGuess, type TileStatus } from '../engine/score.js';
 import { roundOrder } from '../game/service.js';
-import { formatTileLetter, type EmojiPackConfig, type TileColor } from '../render/emoji-pack.js';
+import { escapeHtml, formatTileLetter, type EmojiPackConfig, type TileColor } from '../render/emoji-pack.js';
 
 export const HELP_TEXT = `<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji> Wordle
 
@@ -27,6 +27,26 @@ const A_YELLOW = '<tg-emoji emoji-id="5280718893806034581">🔠</tg-emoji>';
 const A_GREEN = '<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji>';
 const A_DARK = '<tg-emoji emoji-id="5282737683053980256">🔠</tg-emoji>';
 const GAME_OVER = '<tg-emoji emoji-id="5927054181285237634">🏳️</tg-emoji>';
+const STATS_USER = '<tg-emoji emoji-id="5778575233422200567">👤</tg-emoji>';
+const STATS_GAMES = '<tg-emoji emoji-id="6008090211181923982">🎮</tg-emoji>';
+const STATS_GUESSES = '<tg-emoji emoji-id="6005695599410679642">🔠</tg-emoji>';
+const STATS_WINNING = '<tg-emoji emoji-id="6008135256798927387">🏆</tg-emoji>';
+const STATS_TOURNAMENTS = '<tg-emoji emoji-id="5942877472163892475">👥</tg-emoji>';
+const STATS_DUELS = '<tg-emoji emoji-id="5944940516754853337">⚔️</tg-emoji>';
+const STATS_BAR_FILL = '■';
+const STATS_BAR_END = '◗';
+const NUMBER_LABELS = [
+  '<tg-emoji emoji-id="5794182096603847292">1️⃣</tg-emoji>',
+  '<tg-emoji emoji-id="5794303034292968945">2️⃣</tg-emoji>',
+  '<tg-emoji emoji-id="5794031944547178894">3️⃣</tg-emoji>',
+  '<tg-emoji emoji-id="5793901252987330401">4️⃣</tg-emoji>',
+  '<tg-emoji emoji-id="5794066823976592976">5️⃣</tg-emoji>',
+  '<tg-emoji emoji-id="5794235255414069703">6️⃣</tg-emoji>',
+];
+
+export function rankLabelHtml(rank: number): string {
+  return NUMBER_LABELS[rank - 1] ?? `${rank}.`;
+}
 
 export function describeCreativity(s: ChatSettings): string {
   if (!s.creativity.configured) return 'off — set with /creativity 30m or /creativity 15w';
@@ -146,35 +166,47 @@ export function parseCreativityValue(input: string): { seconds: number } | { cou
   return null;
 }
 
-export function statsText(s: StatsRow, displayName: string): string {
-  const winRate = s.games_played ? Math.round((100 * s.games_won) / s.games_played) : 0;
-  const guessAcc = s.guesses_total
-    ? `${Math.round((100 * s.greens) / (s.guesses_total * 5))}% green, ${Math.round((100 * s.yellows) / (s.guesses_total * 5))}% yellow`
-    : '—';
-  const dist = [s.dist1, s.dist2, s.dist3, s.dist4, s.dist5, s.dist6];
-  const maxDist = Math.max(1, ...dist);
-  const distLines = dist
-    .map((n, i) => `${i + 1}: ${'▓'.repeat(Math.max(n > 0 ? 1 : 0, Math.round((n / maxDist) * 8)))} ${n}`)
-    .join('\n');
-  const fastest = s.fastest_ms !== null ? humanMs(s.fastest_ms) : '—';
-  const solveShare = s.games_won ? Math.round((100 * s.solves) / s.games_won) : 0;
+function percent(part: number, total: number): number {
+  return total ? Math.round((100 * part) / total) : 0;
+}
 
-  return `📊 Stats — ${displayName}
+function winningBar(count: number, maxCount: number): string {
+  if (!count || !maxCount) return '';
+  const units = Math.max(1, Math.round((count / maxCount) * 5));
+  return `${STATS_BAR_FILL.repeat(Math.min(5, units))}${STATS_BAR_END}`;
+}
 
-Games played: ${s.games_played}
-Games won (with the group): ${s.games_won} (${winRate}%)
-Winning guesses by you: ${s.solves}${s.games_won ? ` — you land the final word in ${solveShare}% of wins` : ''}
-Current streak: ${s.current_streak} · Best streak: ${s.best_streak}
-Fastest solve: ${fastest}
+function winningLine(label: string, count: number, maxCount: number): string {
+  const bar = winningBar(count, maxCount);
+  return bar ? `${label} ${bar}` : `${label}`;
+}
 
-Guesses made: ${s.guesses_total}
-Letter accuracy: ${guessAcc}
+export function statsText(s: StatsRow, displayName: string, chatName: string): string {
+  const totalLetters = s.guesses_total * 5;
+  const maxDist = Math.max(s.dist1, s.dist2, s.dist3, s.dist4, s.dist5, s.dist6);
 
-Winning-guess distribution
-${distLines}
+  return `${STATS_USER} ${escapeHtml(displayName)} · ${escapeHtml(chatName)}
 
-🏆 Tournaments: ${s.tournaments_played} played · ${s.tournaments_won} won · ${s.tournament_points} pts
-⚔️ Duels: ${s.duels_played} played · ${s.duels_won} won`;
+${STATS_GAMES} Games
+${s.games_played} total · ${s.games_won} won (${percent(s.games_won, s.games_played)}%) · ${s.solves} finished (${percent(s.solves, s.games_played)}% / ${percent(s.solves, s.games_won)}%)
+${s.current_streak} in a row · max ${s.best_streak}
+
+${STATS_GUESSES} Guesses
+${s.guesses_total} guesses · ${A_YELLOW} ${s.yellows} (${percent(s.yellows, s.guesses_total)}% / ${percent(s.yellows, totalLetters)}%) · ${A_GREEN} ${s.greens} (${percent(s.greens, s.guesses_total)}% / ${percent(s.greens, totalLetters)}%)
+
+${STATS_WINNING} Winning
+${winningLine(rankLabelHtml(1), s.dist1, maxDist)}
+${winningLine(rankLabelHtml(2), s.dist2, maxDist)}
+${winningLine(rankLabelHtml(3), s.dist3, maxDist)}
+${winningLine(rankLabelHtml(4), s.dist4, maxDist)}
+${winningLine(rankLabelHtml(5), s.dist5, maxDist)}
+${winningLine(rankLabelHtml(6), s.dist6, maxDist)}
+
+${STATS_TOURNAMENTS} Tournaments
+${s.tournaments_played} total · ${s.tournaments_won} won (${percent(s.tournaments_won, s.tournaments_played)}%) · ${s.tournament_points} points
+
+${STATS_DUELS} Duels
+${s.duels_played} total · ${s.duels_won} won (${percent(s.duels_won, s.duels_played)}%)`;
 }
 
 export function humanMs(ms: number): string {
@@ -188,7 +220,7 @@ export function standingsText(t: TournamentRow): string {
   const rows = [...t.players]
     .map((p) => ({ p, pts: t.scores[String(p.userId)] ?? 0 }))
     .sort((a, b) => b.pts - a.pts)
-    .map((r, i) => `${i + 1}. ${r.p.userName} — ${r.pts} pts`);
+    .map((r, i) => `${rankLabelHtml(i + 1)} ${r.p.userName} — ${r.pts} pts`);
   return rows.join('\n');
 }
 

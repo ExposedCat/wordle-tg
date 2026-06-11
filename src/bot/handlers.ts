@@ -14,6 +14,7 @@ import {
   humanMs,
   modeHelpText,
   parseCreativityValue,
+  rankLabelHtml,
   settingsText,
 	statsText,
 } from './format.js';
@@ -48,6 +49,15 @@ function userRef(ctx: Context): UserRef {
   return { id: u.id, name, username: u.username, firstName: u.first_name || u.username || 'Player' };
 }
 
+function chatDisplayName(ctx: Context): string {
+  const chat = ctx.chat;
+  if (!chat) return 'Chat';
+  if ('title' in chat && chat.title) return chat.title;
+  if ('username' in chat && chat.username) return `@${chat.username}`;
+  if ('first_name' in chat) return [chat.first_name, chat.last_name].filter(Boolean).join(' ') || 'Private chat';
+  return 'Chat';
+}
+
 function playerMentionHtml(player: { userId: number; userName: string; username?: string; firstName?: string }): string {
   if (player.username) return `@${player.username}`;
   const label = escapeHtml(player.firstName || player.userName);
@@ -60,11 +70,10 @@ function playerNameLinkHtml(player: { userId: number; userName: string; firstNam
 }
 
 function tournamentStandingsHtml(t: TournamentRow): string {
-  const rankLabels = ['🥇', '🥈', '🥉'];
   return [...t.players]
     .map((p) => ({ p, pts: t.scores[String(p.userId)] ?? 0 }))
     .sort((a, b) => b.pts - a.pts)
-    .map((r, i) => `${rankLabels[i] ?? `${i + 1}.`} ${playerNameLinkHtml(r.p)} · ${r.pts}`)
+    .map((r, i) => `${rankLabelHtml(i + 1)} ${playerNameLinkHtml(r.p)} · ${r.pts}`)
     .join('\n');
 }
 
@@ -391,7 +400,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   bot.command('play', async (ctx) => {
     const chatId = ctx.chat.id;
     const t = svc.openTournament(chatId);
-    if (t) return void (await ctx.reply('A tournament is open in this chat — finish it or /tournament cancel first.'));
+    if (t) return void (await ctx.reply('A tournament is open in this chat — finish it with /giveup first.'));
     const game = svc.startGame(chatId);
     if (!game) return void (await ctx.reply('A game is already running! Check /board or /giveup to abandon it.'));
     const s = svc.settings(chatId);
@@ -423,15 +432,23 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
 
   bot.command('giveup', async (ctx) => {
     const res = svc.giveUp(ctx.chat.id);
-    if (!res) return void (await ctx.reply(`${NO_ACTIVE} No active game to give up.`, { parse_mode: 'HTML' }));
-    let msg = giveUpText(res.answer);
+    if (!res) return void (await ctx.reply(`${NO_ACTIVE} No active game or tournament to give up.`, { parse_mode: 'HTML' }));
+    const msg = res.answer
+      ? `${giveUpText(res.answer)}${res.tournamentCancelled ? `\n\n${TOURNAMENT_CANCELLED} Tournament cancelled.` : ''}`
+      : `${TOURNAMENT_CANCELLED} Tournament cancelled.`;
     await ctx.reply(msg, { parse_mode: 'HTML' });
   });
 
   bot.command('stats', async (ctx) => {
     const user = userRef(ctx);
     const row = svc.statsFor(ctx.chat.id, user.id);
-    await ctx.reply(statsText(row, user.name));
+    await ctx.reply(statsText(row, user.name, chatDisplayName(ctx)), { parse_mode: 'HTML' });
+  });
+
+  bot.command('global', async (ctx) => {
+    const user = userRef(ctx);
+    const row = svc.globalStatsFor(user.id);
+    await ctx.reply(statsText(row, user.name, 'All chats'), { parse_mode: 'HTML' });
   });
 
   bot.command('creativity', async (ctx) => {
@@ -520,12 +537,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   bot.command('tournament', async (ctx) => {
     const chatId = ctx.chat.id;
     const arg = (ctx.match ?? '').trim().toLowerCase();
-    if (arg === 'cancel') {
-      const res = svc.cancelTournament(chatId, ctx.from!.id);
-      if (!res) return void (await ctx.reply(`${NO_ACTIVE} No open tournament here.`, { parse_mode: 'HTML' }));
-      if (res === 'not_allowed') return void (await ctx.reply('Only the tournament creator can cancel it.'));
-      return void (await ctx.reply(`${TOURNAMENT_CANCELLED} Tournament cancelled.`, { parse_mode: 'HTML' }));
-    }
+    if (arg && !/^\d+$/.test(arg)) return void (await ctx.reply('Usage: /tournament [N]. Use /giveup to end an open tournament.'));
     const existing = svc.openTournament(chatId);
     if (existing) {
       if (existing.status === 'joining')
@@ -567,6 +579,13 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
     const res = svc.quitTournament(parseInt(ctx.match[1], 10), ctx.from.id);
     if (!res || res === 'closed') return void (await ctx.answerCallbackQuery('This tournament is not open for joining.'));
     if (res === 'not_in') return void (await ctx.answerCallbackQuery('You are not in this tournament.'));
+    if (res.status === 'cancelled') {
+      await ctx.editMessageText(`${TOURNAMENT_CANCELLED} Tournament cancelled.`, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [] },
+      });
+      return void (await ctx.answerCallbackQuery('Quit. Tournament cancelled.'));
+    }
     await ctx.editMessageText(lobbyText(res), { parse_mode: 'HTML', reply_markup: lobbyKeyboard(res) });
     await ctx.answerCallbackQuery('Quit.');
   });
