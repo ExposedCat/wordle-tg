@@ -177,6 +177,10 @@ describe('tournaments', () => {
     expect(pointsForGuessNumber(6)).toBe(1);
   });
 
+  it('defaults tournament max-fails to 5 in chat settings', () => {
+    expect(svc.settings(CHAT).tournamentMaxFails).toBe(5);
+  });
+
   it('requires at least two players to start', () => {
     const t0 = svc.createTournament(CHAT, 2, A)!;
 
@@ -227,6 +231,100 @@ describe('tournaments', () => {
     expect(sb.tournaments_won).toBe(1);
     expect(sb.tournament_points).toBe(11);
     expect(svc.statsFor(CHAT, A.id).tournaments_won).toBe(0);
+  });
+
+  it('forfeits a tournament turn after too many unknown words', () => {
+    const s = svc.settings(CHAT);
+    s.tournamentMaxFails = 2;
+    svc.saveSettings(CHAT, s);
+
+    const t0 = svc.createTournament(CHAT, 1, A)!;
+    svc.joinTournament(t0.id, B);
+    const started = svc.startTournament(t0.id);
+    expect(started).not.toBe('too_few');
+
+    const r1 = svc.submitGuess(CHAT, A, 'zzzzz');
+    expect(r1.type).toBe('not_a_word');
+    if (r1.type !== 'not_a_word') throw new Error('expected rejection');
+    expect(r1.rejectStatus?.remaining).toBe(1);
+    expect(r1.rejectStatus?.limit).toBe(2);
+    expect(r1.rejectStatus?.forfeit).toBeUndefined();
+    expect(svc.openTournament(CHAT)?.fail_count).toBe(1);
+
+    const r2 = svc.submitGuess(CHAT, A, 'xxxxx');
+    expect(r2.type).toBe('not_a_word');
+    if (r2.type !== 'not_a_word') throw new Error('expected rejection');
+    expect(r2.rejectStatus?.remaining).toBe(0);
+    expect(r2.rejectStatus?.limit).toBe(2);
+    expect(r2.rejectStatus?.forfeit?.nextPlayer.userId).toBe(B.id);
+    expect(svc.openTournament(CHAT)?.fail_count).toBe(0);
+    expect(svc.submitGuess(CHAT, A, 'crane').type).toBe('not_your_turn');
+  });
+
+  it('can disable tournament max-fails', () => {
+    const s = svc.settings(CHAT);
+    s.tournamentMaxFails = null;
+    svc.saveSettings(CHAT, s);
+
+    const t0 = svc.createTournament(CHAT, 1, A)!;
+    svc.joinTournament(t0.id, B);
+    svc.startTournament(t0.id);
+
+    expect(svc.submitGuess(CHAT, A, 'zzzzz').type).toBe('not_a_word');
+    const r = svc.submitGuess(CHAT, A, 'xxxxx');
+    expect(r.type).toBe('not_a_word');
+    if (r.type !== 'not_a_word') throw new Error('expected rejection');
+    expect(r.rejectStatus).toBeUndefined();
+    expect(svc.openTournament(CHAT)?.turn_idx).toBe(0);
+    expect(svc.openTournament(CHAT)?.fail_count).toBe(0);
+  });
+
+  it('forfeits a tournament turn after too many hard-mode violations', () => {
+    const s = svc.settings(CHAT);
+    s.difficulty = 'hard';
+    s.tournamentMaxFails = 2;
+    svc.saveSettings(CHAT, s);
+
+    const t0 = svc.createTournament(CHAT, 1, A)!;
+    svc.joinTournament(t0.id, B);
+    const started = svc.startTournament(t0.id);
+    expect(started).not.toBe('too_few');
+    const { game } = started as Exclude<typeof started, 'too_few' | null>;
+    forceAnswer(game.id, 'water');
+
+    expect(svc.submitGuess(CHAT, A, 'trace').type).toBe('accepted');
+    expect(svc.submitGuess(CHAT, B, 'spill').type).toBe('hard_mode_violation');
+    const r = svc.submitGuess(CHAT, B, 'crane');
+    expect(r.type).toBe('hard_mode_violation');
+    if (r.type !== 'hard_mode_violation') throw new Error('expected hard-mode violation');
+    expect(r.rejectStatus?.remaining).toBe(0);
+    expect(r.rejectStatus?.forfeit?.nextPlayer.userId).toBe(A.id);
+    expect(svc.openTournament(CHAT)?.turn_idx).toBe(0);
+  });
+
+  it('forfeits a tournament turn after a creativity violation hits the limit', () => {
+    const s = svc.settings(CHAT);
+    s.tournamentMaxFails = 1;
+    s.creativity.enabled = true;
+    s.creativity.configured = true;
+    s.creativity.mode = 'time';
+    s.creativity.seconds = 3600;
+    svc.saveSettings(CHAT, s);
+
+    db.prepare('INSERT INTO used_words (chat_id, word, used_at) VALUES (?, ?, ?)').run(CHAT, 'crane', Date.now());
+    const t0 = svc.createTournament(CHAT, 1, A)!;
+    svc.joinTournament(t0.id, B);
+    const started = svc.startTournament(t0.id);
+    expect(started).not.toBe('too_few');
+    const { game } = started as Exclude<typeof started, 'too_few' | null>;
+    forceAnswer(game.id, 'water');
+
+    const r = svc.submitGuess(CHAT, A, 'crane');
+    expect(r.type).toBe('creativity_blocked');
+    if (r.type !== 'creativity_blocked') throw new Error('expected creativity block');
+    expect(r.rejectStatus?.remaining).toBe(0);
+    expect(r.rejectStatus?.forfeit?.nextPlayer.userId).toBe(B.id);
+    expect(svc.openTournament(CHAT)?.turn_idx).toBe(1);
   });
 
   it('starts unspecified-round tournament with one round per joined player', () => {

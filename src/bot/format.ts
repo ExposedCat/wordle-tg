@@ -47,6 +47,10 @@ Creativity /creativity_help
 /creativity 30m · time frame${tick(s.creativity.configured && s.creativity.mode === 'time')}
 /creativity 15w · word frame${tick(s.creativity.configured && s.creativity.mode === 'count')}
 
+Tournament
+/fails N · max rejected guesses per turn: ${s.tournamentMaxFails === null ? 'off' : s.tournamentMaxFails}
+/fails off · unlimited
+
 Misc
 /auto · guess without /w ${toggleIcon(s.bareWord)}
 /usepack NAME · custom emoji pack ${toggleIcon(s.emojiPack !== null)}`;

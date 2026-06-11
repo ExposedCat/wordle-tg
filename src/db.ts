@@ -18,6 +18,8 @@ export interface ChatSettings {
   difficulty: Difficulty;
   creativity: CreativitySettings;
   emojiPack: EmojiPackConfig | null;
+  /** Tournament rejected guesses allowed per turn; null = unlimited. */
+  tournamentMaxFails: number | null;
 }
 
 export const DEFAULT_SETTINGS: ChatSettings = {
@@ -25,6 +27,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   difficulty: 'normal',
   creativity: { enabled: false, configured: false, mode: 'time', seconds: 3600, count: 20 },
   emojiPack: null,
+  tournamentMaxFails: 5,
 };
 
 export interface GuessEntry {
@@ -68,6 +71,7 @@ export interface TournamentRow {
   players: TournamentPlayer[];
   scores: Record<string, number>; // userId -> points
   turn_idx: number; // index into rotated order of the current round
+  fail_count: number; // rejected guesses by the current player this turn
   created_by: number;
 }
 
@@ -153,6 +157,7 @@ export function openDb(path: string): Database.Database {
       players TEXT NOT NULL DEFAULT '[]',
       scores TEXT NOT NULL DEFAULT '{}',
       turn_idx INTEGER NOT NULL DEFAULT 0,
+      fail_count INTEGER NOT NULL DEFAULT 0,
       created_by INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS duels (
@@ -190,6 +195,10 @@ export function openDb(path: string): Database.Database {
       PRIMARY KEY (chat_id, user_id)
     );
   `);
+  const tournamentColumns = db.prepare('PRAGMA table_info(tournaments)').all() as { name: string }[];
+  if (!tournamentColumns.some((column) => column.name === 'fail_count')) {
+    db.prepare('ALTER TABLE tournaments ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0').run();
+  }
   return db;
 }
 
@@ -217,6 +226,12 @@ export function getSettings(db: Database.Database, chatId: number): ChatSettings
     ...parsed,
     creativity,
     emojiPack: isEmojiPackConfig(parsed.emojiPack) ? parsed.emojiPack : null,
+    tournamentMaxFails:
+      parsed.tournamentMaxFails === null
+        ? null
+        : Number.isInteger(parsed.tournamentMaxFails) && parsed.tournamentMaxFails > 0
+          ? parsed.tournamentMaxFails
+          : DEFAULT_SETTINGS.tournamentMaxFails,
   };
 }
 
@@ -296,7 +311,7 @@ export function recentWords(db: Database.Database, chatId: number, c: Creativity
 // ---------- tournaments ----------
 
 function parseTournament(row: any): TournamentRow {
-  return { ...row, players: JSON.parse(row.players), scores: JSON.parse(row.scores) };
+  return { ...row, players: JSON.parse(row.players), scores: JSON.parse(row.scores), fail_count: row.fail_count ?? 0 };
 }
 
 export function getOpenTournament(db: Database.Database, chatId: number): TournamentRow | null {
@@ -327,8 +342,8 @@ export function createTournament(
 
 export function updateTournament(db: Database.Database, t: TournamentRow): void {
   db.prepare(
-    `UPDATE tournaments SET rounds = ?, current_round = ?, status = ?, players = ?, scores = ?, turn_idx = ? WHERE id = ?`
-  ).run(t.rounds, t.current_round, t.status, JSON.stringify(t.players), JSON.stringify(t.scores), t.turn_idx, t.id);
+    `UPDATE tournaments SET rounds = ?, current_round = ?, status = ?, players = ?, scores = ?, turn_idx = ?, fail_count = ? WHERE id = ?`
+  ).run(t.rounds, t.current_round, t.status, JSON.stringify(t.players), JSON.stringify(t.scores), t.turn_idx, t.fail_count, t.id);
 }
 
 // ---------- duels ----------

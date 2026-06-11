@@ -47,11 +47,22 @@ export function pointsForGuessNumber(n: number): number {
   return MAX_GUESSES + 1 - n; // guess #1 → 6 pts … guess #6 → 1 pt
 }
 
+export interface TournamentRejectStatus {
+  forfeitedPlayer: TournamentPlayer;
+  failCount: number;
+  limit: number;
+  remaining: number;
+  forfeit?: {
+    t: TournamentRow;
+    nextPlayer: TournamentPlayer;
+  };
+}
+
 export type GuessOutcome =
   | { type: 'no_game' }
-  | { type: 'not_a_word'; word: string }
-  | { type: 'creativity_blocked'; word: string }
-  | { type: 'hard_mode_violation'; word: string; violation: HardModeViolation; superHard: boolean }
+  | { type: 'not_a_word'; word: string; rejectStatus?: TournamentRejectStatus }
+  | { type: 'creativity_blocked'; word: string; rejectStatus?: TournamentRejectStatus }
+  | { type: 'hard_mode_violation'; word: string; violation: HardModeViolation; superHard: boolean; rejectStatus?: TournamentRejectStatus }
   | { type: 'already_guessed'; word: string }
   | { type: 'ignored' }
   | { type: 'not_your_turn'; currentPlayer: TournamentPlayer }
@@ -129,32 +140,39 @@ export class GameService {
     // Tournament turn enforcement happens before word validation so out-of-turn
     // players do not learn anything from dictionary or rule checks.
     let tournament: TournamentRow | null = null;
+    let currentTournamentPlayer: TournamentPlayer | null = null;
     if (game.kind === 'tournament' && game.tournament_id) {
       tournament = getTournament(this.db, game.tournament_id);
       if (tournament && tournament.status === 'active') {
         if (!tournament.players.some((p) => p.userId === user.id)) return { type: 'ignored' };
         const order = roundOrder(tournament.players, tournament.current_round);
-        const current = order[tournament.turn_idx % order.length];
-        if (current.userId !== user.id) return { type: 'not_your_turn', currentPlayer: current };
+        currentTournamentPlayer = order[tournament.turn_idx % order.length];
+        if (currentTournamentPlayer.userId !== user.id) return { type: 'not_your_turn', currentPlayer: currentTournamentPlayer };
       }
     }
 
-    if (!isValidWord(word)) return { type: 'not_a_word', word };
+    const settings = getSettings(this.db, chatId);
+
+    const tournamentReject = () =>
+      tournament && currentTournamentPlayer
+        ? this.recordTournamentRejectedAttempt(tournament, currentTournamentPlayer, settings)
+        : undefined;
+
+    if (!isValidWord(word)) return { type: 'not_a_word', word, rejectStatus: tournamentReject() };
     if (game.guesses.some((g) => g.word === word)) return { type: 'already_guessed', word };
 
-    const settings = getSettings(this.db, chatId);
     const isDuel = game.kind === 'duel';
 
     // creativity mode (not for duels — both duelists must face the same word fairly)
     if (!isDuel && word !== game.answer && recentWords(this.db, chatId, settings.creativity).has(word)) {
-      return { type: 'creativity_blocked', word };
+      return { type: 'creativity_blocked', word, rejectStatus: tournamentReject() };
     }
 
     // hard / super hard mode: all revealed hints must be used
     if (settings.difficulty !== 'normal') {
       const superHard = settings.difficulty === 'superhard';
       const violation = hardModeViolation(game.answer, game.guesses.map((g) => g.word), word, superHard);
-      if (violation) return { type: 'hard_mode_violation', word, violation, superHard };
+      if (violation) return { type: 'hard_mode_violation', word, violation, superHard, rejectStatus: tournamentReject() };
     }
 
     // accept the guess
@@ -228,6 +246,7 @@ export class GameService {
     t.status = 'active';
     t.current_round = 1;
     t.turn_idx = 0;
+    t.fail_count = 0;
     for (const p of t.players) t.scores[String(p.userId)] = 0;
     updateTournament(this.db, t);
     const game = this.newTournamentGame(t);
@@ -256,6 +275,28 @@ export class GameService {
     return createGame(this.db, t.chat_id, answer, 'tournament', { tournamentId: t.id });
   }
 
+  private recordTournamentRejectedAttempt(
+    t: TournamentRow,
+    currentPlayer: TournamentPlayer,
+    settings: ChatSettings
+  ): TournamentRejectStatus | undefined {
+    const limit = settings.tournamentMaxFails;
+    if (limit === null) return undefined;
+
+    t.fail_count += 1;
+    if (t.fail_count < limit) {
+      updateTournament(this.db, t);
+      return { forfeitedPlayer: currentPlayer, failCount: t.fail_count, limit, remaining: limit - t.fail_count };
+    }
+
+    const failCount = t.fail_count;
+    t.turn_idx = (t.turn_idx + 1) % t.players.length;
+    t.fail_count = 0;
+    updateTournament(this.db, t);
+    const nextPlayer = roundOrder(t.players, t.current_round)[t.turn_idx];
+    return { forfeitedPlayer: currentPlayer, failCount, limit, remaining: 0, forfeit: { t, nextPlayer } };
+  }
+
   private advanceTournament(
     t: TournamentRow,
     user: UserRef,
@@ -269,6 +310,8 @@ export class GameService {
     let nextGame: GameRow | null = null;
     let nextPlayer: TournamentPlayer | null = null;
     let winners: TournamentPlayer[] = [];
+
+    t.fail_count = 0;
 
     if (solved) {
       pointsAwarded = pointsForGuessNumber(guessNumber);

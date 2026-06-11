@@ -22,6 +22,7 @@ const COMMANDS = [
   { command: 'giveup', description: 'End the game and reveal the word' },
   { command: 'stats', description: 'Your stats in this chat' },
   { command: 'tournament', description: 'Start a turn-based tournament' },
+  { command: 'fails', description: 'Set tournament rejected-guess limit' },
   { command: 'challenge', description: 'Duel a friend' },
   { command: 'usepack', description: 'Use an existing custom emoji pack' },
   { command: 'creativity', description: 'Toggle or configure recent-word bans' },

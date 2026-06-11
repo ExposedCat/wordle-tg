@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import { Bot, Context, InlineKeyboard, InputFile } from 'grammy';
 import { GameRow, TournamentRow } from '../db.js';
-import { GameService, MAX_GUESSES, UserRef, roundOrder } from '../game/service.js';
+import { GameService, MAX_GUESSES, roundOrder, type TournamentRejectStatus, type UserRef } from '../game/service.js';
 import { emojiPackFromStickers, escapeHtml, packNameCandidates } from '../render/emoji-pack.js';
 import { renderBoardSticker, renderKeyboardSticker } from '../render/image.js';
 import {
@@ -29,6 +29,7 @@ const TOURNAMENT_FINISHED = '<tg-emoji emoji-id="5942913498349571809">🏆</tg-e
 const NOT_ALLOWED = '<tg-emoji emoji-id="5924719252379537729">🤔</tg-emoji>';
 const TOURNAMENT_CANCELLED = '<tg-emoji emoji-id="5870734657384877785">🏳️</tg-emoji>';
 const NO_ACTIVE = '<tg-emoji emoji-id="5927052244254986343">❕</tg-emoji>';
+const FORBIDDEN = '<tg-emoji emoji-id="5872829476143894491">🚫</tg-emoji>';
 
 type StyledInlineButton = {
 	text: string;
@@ -78,6 +79,13 @@ function currentTournamentPlayer(t: TournamentRow) {
 
 function tournamentStatusHtml(t: TournamentRow): string {
   return `${roundLabelHtml(t)}\n\nNext up ${playerMentionHtml(currentTournamentPlayer(t))}`;
+}
+
+function tournamentRejectStatusHtml(status?: TournamentRejectStatus): string {
+  if (!status) return '';
+  const remaining = ` ${status.remaining}/${status.limit} guesses left`;
+  if (!status.forfeit) return remaining;
+  return `${remaining}\n\n${NOT_SO_FAST} ${playerNameLinkHtml(status.forfeitedPlayer)} hit ${status.limit} rejected guesses and forfeits the turn.\nNext up ${playerMentionHtml(status.forfeit.nextPlayer)}`;
 }
 
 function lobbyText(t: TournamentRow): string {
@@ -176,7 +184,9 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
         if (!opts.silentNoGame) await ctx.reply(`${NO_ACTIVE} No game running here. Send /play to start one!`, { parse_mode: 'HTML' });
         return;
       case 'not_a_word':
-        await ctx.reply(`${NOT_ALLOWED} "${escapeHtml(out.word.toUpperCase())}" is not allowed`, { parse_mode: 'HTML' });
+        await ctx.reply(`${NOT_ALLOWED} "${escapeHtml(out.word.toUpperCase())}" is not allowed.${tournamentRejectStatusHtml(out.rejectStatus)}`, {
+          parse_mode: 'HTML',
+        });
         return;
       case 'already_guessed':
         {
@@ -186,12 +196,18 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
         }
         return;
       case 'creativity_blocked':
-        await ctx.reply(`🚫 Creativity mode: ${out.word.toUpperCase()} was used recently here. Try something fresh!`);
+        await ctx.reply(
+          `${FORBIDDEN} Creativity mode: ${escapeHtml(out.word.toUpperCase())} was used recently here. Try something fresh!${tournamentRejectStatusHtml(out.rejectStatus)}`,
+          { parse_mode: 'HTML' }
+        );
         return;
       case 'hard_mode_violation':
-        await ctx.reply(hardModeViolationText(out.violation, out.superHard, svc.settings(chatId).emojiPack), {
-          parse_mode: 'HTML',
-        });
+        await ctx.reply(
+          `${hardModeViolationText(out.violation, out.superHard, svc.settings(chatId).emojiPack)}${tournamentRejectStatusHtml(out.rejectStatus)}`,
+          {
+            parse_mode: 'HTML',
+          }
+        );
         return;
       case 'ignored':
         return;
@@ -278,7 +294,7 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
   }
 
   function forbiddenText(text: string): string {
-    return `<tg-emoji emoji-id="5872829476143894491">🚫</tg-emoji> ${text}`;
+    return `${FORBIDDEN} ${text}`;
   }
 
   function playGuessInstruction(bareWord: boolean): string {
@@ -452,11 +468,33 @@ export function registerHandlers(bot: Bot, db: Database.Database): void {
 
   bot.command('settings', async (ctx) => {
     const chatId = ctx.chat.id;
-    const args = (ctx.match ?? '').trim();
+    const args = (ctx.match ?? '').trim().toLowerCase();
     if (args) {
       return void (await ctx.reply('Usage: /settings'));
     }
     await ctx.reply(settingsText(svc.settings(chatId)), { parse_mode: 'HTML' });
+  });
+
+  bot.command('fails', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const value = (ctx.match ?? '').trim().toLowerCase();
+    if (!value) {
+      return void (await ctx.reply('Usage: /fails N  |  /fails off'));
+    }
+
+    const s = svc.settings(chatId);
+    if (value === 'off' || value === 'unlimited') {
+      s.tournamentMaxFails = null;
+    } else {
+      const n = parseInt(value, 10);
+      if (!/^\d+$/.test(value) || n <= 0) {
+        return void (await ctx.reply('Usage: /fails N, where N is a positive number, or /fails off'));
+      }
+      s.tournamentMaxFails = n;
+    }
+    svc.saveSettings(chatId, s);
+    const label = s.tournamentMaxFails === null ? 'off (unlimited)' : `${s.tournamentMaxFails}`;
+    await ctx.reply(tickText(`Tournament max-fails set to ${label}`), { parse_mode: 'HTML' });
   });
 
   bot.command('tournament', async (ctx) => {
