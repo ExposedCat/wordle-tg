@@ -1,11 +1,8 @@
 import {
 	type ChatSettings,
-	createDuel,
 	createGame,
 	createTournament,
 	type Database,
-	type DuelPlayerResult,
-	type DuelRow,
 	findStatsByName,
 	type GameRow,
 	type GuessEntry,
@@ -13,7 +10,6 @@ import {
 	getActiveTournaments,
 	getBoardMessageIds,
 	getCompletedDailyGame,
-	getDuel,
 	getGlobalStats,
 	getOpenTournament,
 	getOrCreatePersonalScopeChatId,
@@ -29,13 +25,11 @@ import {
 	saveSettings,
 	type TournamentPlayer,
 	type TournamentRow,
-	updateDuel,
 	updateGame,
 	updateTournament,
 } from "../app/data.ts";
 import { createLogger } from "../log.ts";
 import {
-	applyDuelStats,
 	applyGameEndStats,
 	applyGuessStats,
 	applyTournamentStats,
@@ -47,7 +41,6 @@ import {
 	tournamentWinners,
 } from "../tournament/rules.ts";
 import { dailyAnswer, dateKey } from "./daily.ts";
-import { duelWinner } from "./duel.ts";
 import { maxGuessesForGame } from "./guess.ts";
 import { type GuessQuality, guessQuality } from "./guess-quality.ts";
 import { type HardModeViolation, hardModeViolation } from "./hardmode.ts";
@@ -177,7 +170,6 @@ export type GuessOutcome =
 				nextPlayer: TournamentPlayer | null;
 				winners: TournamentPlayer[];
 			};
-			duel?: { d: DuelRow; finished: boolean; bothDone: boolean };
 	  };
 
 export class GameService {
@@ -619,11 +611,7 @@ export class GameService {
 			return { type: "already_guessed", word };
 		}
 
-		const isDuel = game.kind === "duel";
-
-		// creativity mode (not for duels — both duelists must face the same word fairly)
 		if (
-			!isDuel &&
 			!isOneshot &&
 			word !== game.answer &&
 			(await recentWords(this.db, chatId, settings.creativity)).has(word)
@@ -669,15 +657,14 @@ export class GameService {
 		}
 
 		// accept the guess
-		const quality =
-			!isDuel && !isOneshot
-				? guessQuality(
-						game.answer,
-						game.guesses.map((g) => g.word),
-						word,
-						answersForLanguage(game.language, wordLength),
-					)
-				: undefined;
+		const quality = !isOneshot
+			? guessQuality(
+					game.answer,
+					game.guesses.map((g) => g.word),
+					word,
+					answersForLanguage(game.language, wordLength),
+				)
+			: undefined;
 		const entry: GuessEntry = {
 			word,
 			userId: user.id,
@@ -705,7 +692,7 @@ export class GameService {
 			lost,
 		});
 
-		if (!isDuel && !isOneshot) {
+		if (!isOneshot) {
 			await recordUsedWord(this.db, chatId, word);
 			if (lost) await recordUsedWord(this.db, chatId, game.answer); // revealed answer is burned too
 		}
@@ -720,15 +707,7 @@ export class GameService {
 			lost,
 		};
 
-		if (isDuel) {
-			outcome.duel = await this.applyDuelProgress(
-				game,
-				user,
-				solved,
-				lost,
-				guessNumber,
-			);
-		} else if (!isOneshot) {
+		if (!isOneshot) {
 			await applyGuessStats(this.db, chatId, user, score, quality!);
 			if (solved || lost)
 				await applyGameEndStats(this.db, chatId, game, solved, guessNumber);
@@ -1103,187 +1082,6 @@ export class GameService {
 			nextPlayer,
 			winners,
 		};
-	}
-
-	// ---------- duels ----------
-
-	/** Create a duel; challenger plays in their private chat once they press Play. */
-	async createDuel(
-		chatId: number,
-		challenger: UserRef,
-		messageThreadId: number | null = null,
-	): Promise<DuelRow> {
-		const s = await getSettings(this.db, chatId);
-		const answer = pickAnswer(
-			s.language,
-			s.wordLength,
-			await recentWords(this.db, chatId, s.creativity),
-		);
-		const duel = await createDuel(this.db, chatId, messageThreadId, answer, {
-			userId: challenger.id,
-			userName: challenger.name,
-			guesses: null,
-			solved: false,
-			ms: null,
-		});
-		log.debug("Created duel", {
-			chatId,
-			duelId: duel.id,
-			challengerId: challenger.id,
-			language: s.language,
-			wordLength: s.wordLength,
-		});
-		return duel;
-	}
-
-	getDuel(id: number): Promise<DuelRow | null> {
-		return getDuel(this.db, id);
-	}
-
-	/**
-	 * A player opens the duel deep link in their private chat: create their private game.
-	 * Returns the game, or a string describing why not.
-	 */
-	async acceptDuel(
-		duelId: number,
-		privateChatId: number,
-		user: UserRef,
-	): Promise<
-		| { d: DuelRow; game: GameRow }
-		| "not_found"
-		| "full"
-		| "already_playing"
-		| "own_game_running"
-	> {
-		const d = await getDuel(this.db, duelId);
-		if (!d || d.status === "cancelled" || d.status === "done") {
-			log.debug("Accept duel rejected as not found or closed", {
-				duelId,
-				privateChatId,
-				userId: user.id,
-			});
-			return "not_found";
-		}
-		const isChallenger = d.challenger.userId === user.id;
-		if (!isChallenger && d.opponent && d.opponent.userId !== user.id) {
-			log.debug("Accept duel rejected as full", {
-				duelId,
-				privateChatId,
-				userId: user.id,
-			});
-			return "full";
-		}
-		if (await getActiveGame(this.db, privateChatId)) {
-			log.debug("Accept duel rejected by active private game", {
-				duelId,
-				privateChatId,
-				userId: user.id,
-			});
-			return "own_game_running";
-		}
-
-		if (isChallenger) {
-			if (d.challenger.guesses !== null) {
-				log.debug("Accept duel rejected as already playing", {
-					duelId,
-					privateChatId,
-					userId: user.id,
-				});
-				return "already_playing";
-			}
-		} else if (d.opponent) {
-			if (d.opponent.guesses !== null) {
-				log.debug("Accept duel rejected as already playing", {
-					duelId,
-					privateChatId,
-					userId: user.id,
-				});
-				return "already_playing";
-			}
-		} else {
-			d.opponent = {
-				userId: user.id,
-				userName: user.name,
-				guesses: null,
-				solved: false,
-				ms: null,
-			};
-			d.status = "active";
-			await updateDuel(this.db, d);
-			log.debug("Duel opponent accepted", {
-				duelId,
-				chatId: d.chat_id,
-				userId: user.id,
-			});
-		}
-		const language = isValidWord(d.answer, "ru", d.answer.length) ? "ru" : "en";
-		const game = await createGame(
-			this.db,
-			privateChatId,
-			d.answer,
-			language,
-			"duel",
-			{ duelId: d.id },
-		);
-		log.debug("Created duel private game", {
-			duelId,
-			chatId: d.chat_id,
-			privateChatId,
-			gameId: game.id,
-			userId: user.id,
-			isChallenger,
-		});
-		return { d: (await getDuel(this.db, duelId))!, game };
-	}
-
-	private async applyDuelProgress(
-		game: GameRow,
-		user: UserRef,
-		solved: boolean,
-		lost: boolean,
-		guessNumber: number,
-	): Promise<{ d: DuelRow; finished: boolean; bothDone: boolean }> {
-		const d = (await getDuel(this.db, game.duel_id!))!;
-		const finished = solved || lost;
-		if (finished) {
-			const result: DuelPlayerResult = {
-				userId: user.id,
-				userName: user.name,
-				guesses: guessNumber,
-				solved,
-				ms: Date.now() - game.started_at,
-			};
-			if (d.challenger.userId === user.id) d.challenger = result;
-			else d.opponent = result;
-			const bothDone =
-				d.challenger.guesses !== null &&
-				d.opponent !== null &&
-				d.opponent.guesses !== null;
-			if (bothDone) {
-				d.status = "done";
-				await applyDuelStats(this.db, d);
-				log.debug("Duel finished", {
-					chatId: d.chat_id,
-					duelId: d.id,
-				});
-			}
-			await updateDuel(this.db, d);
-			log.debug("Recorded duel player result", {
-				chatId: d.chat_id,
-				duelId: d.id,
-				userId: user.id,
-				solved,
-				lost,
-				guessNumber,
-				bothDone,
-			});
-			return { d, finished, bothDone };
-		}
-		return { d, finished: false, bothDone: false };
-	}
-
-	duelWinner(d: DuelRow): DuelPlayerResult | "draw" | null {
-		return duelWinner(d);
 	}
 
 	statsFor(chatId: number, userId: number) {

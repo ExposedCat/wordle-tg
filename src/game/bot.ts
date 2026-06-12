@@ -18,7 +18,6 @@ import {
 import { parseWordTarget } from "../bot/word-target.ts";
 import type { Context } from "../bot.ts";
 import {
-	acceptDuel,
 	activeGame,
 	giveUp,
 	openTournament,
@@ -45,34 +44,6 @@ const log = createLogger("bot:game");
 export const gameComposer = new Composer<Context>();
 
 gameComposer.command("start", async (context) => {
-	const payload = (context.match ?? "").trim();
-	if (payload.startsWith("duel_")) {
-		const duelId = parseInt(payload.slice(5), 10);
-		if (context.chat.type !== "private" || !Number.isFinite(duelId)) return;
-		const acceptResult = await acceptDuel(
-			duelId,
-			context.chat.id,
-			userRef(context),
-		);
-		if (acceptResult === "not_found")
-			return void (await context.text("game.duelGone"));
-		if (acceptResult === "full")
-			return void (await context.text("game.duelFull"));
-		if (acceptResult === "already_playing")
-			return void (await context.text("game.duelAlreadyPlaying"));
-		if (acceptResult === "own_game_running")
-			return void (await context.text("game.duelOwnGameRunning"));
-		await context.text("game.duelAccepted", {
-			length: acceptResult.game.answer.length,
-		});
-		await sendBoard(
-			context,
-			context.chat.id,
-			acceptResult.game,
-			context.t("game.duelBoard"),
-		);
-		return;
-	}
 	await replyHelp(context);
 });
 

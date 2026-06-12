@@ -22,7 +22,6 @@ import {
 	activeTournaments,
 	boardMessageIds,
 	settings as chatSettings,
-	duelWinner,
 	expireTournamentTurn,
 	getTournament,
 	saveBoardMessageIds,
@@ -49,7 +48,6 @@ import {
 	answerMeaningText,
 	hardModeViolationText,
 	helpText,
-	humanMs,
 } from "./format.ts";
 import { text as defaultText } from "./i18n.ts";
 import {
@@ -421,8 +419,7 @@ export async function handleGuess(
 			return;
 	}
 
-	const { game, guessNumber, solved, lost, tournament, duel, quality } =
-		guessResult;
+	const { game, guessNumber, solved, lost, tournament, quality } = guessResult;
 	const maxGuesses = maxGuessesForGame(game);
 	const lines: string[] = [];
 
@@ -488,13 +485,11 @@ export async function handleGuess(
 		: undefined;
 
 	if (lost) {
-		if (duel) lines.push(context.t("game.outOfGuessesSecret"));
-		else
-			lines.push(
-				context.t("game.outOfGuessesAnswer", {
-					answer: answerMeaningSentence(game.answer, finishedMeaningHtml),
-				}),
-			);
+		lines.push(
+			context.t("game.outOfGuessesAnswer", {
+				answer: answerMeaningSentence(game.answer, finishedMeaningHtml),
+			}),
+		);
 	}
 
 	if (tournament) {
@@ -562,51 +557,6 @@ export async function handleGuess(
 				answer: answerMeaningText(game.answer, finishedMeaning),
 			}),
 		);
-	}
-
-	if (duel) {
-		await sendBoard(context, chatId, game, lines.join("\n"), {
-			captionHtml: lost,
-			hideKeyboard: solved,
-			stateChatId,
-		});
-		const { d: duelRecord, finished, bothDone } = duel;
-		if (finished && !bothDone) {
-			await context.text("game.duelBoardDone");
-		}
-		if (bothDone) {
-			const winner = duelWinner(duelRecord);
-			const describeDuelPlayer = (duelPlayer: typeof duelRecord.challenger) =>
-				duelPlayer.solved
-					? context.t("game.duelResultSolved", {
-							player: duelPlayer.userName,
-							guesses: duelPlayer.guesses ?? MAX_GUESSES,
-							maxGuesses: MAX_GUESSES,
-							time: humanMs(duelPlayer.ms!),
-						})
-					: context.t("game.duelResultFailed", { player: duelPlayer.userName });
-			const verdict =
-				winner === "draw"
-					? context.t("game.duelDraw")
-					: context.t("game.duelWinner", {
-							player: (winner as { userName: string }).userName,
-						});
-			const summary = context.t("game.duelFinished", {
-				answer: answerMeaningSentence(duelRecord.answer, finishedMeaning),
-				challenger: describeDuelPlayer(duelRecord.challenger),
-				opponent: describeDuelPlayer(duelRecord.opponent!),
-				verdict,
-			});
-			await context.reply(summary);
-			await context.api
-				.sendMessage(
-					duelRecord.chat_id,
-					summary,
-					storedThreadOptions(duelRecord.message_thread_id),
-				)
-				.catch(() => {});
-		}
-		return;
 	}
 
 	await sendBoard(context, chatId, game, lines.join("\n"), {

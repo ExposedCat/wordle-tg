@@ -90,8 +90,5 @@ export function statsText(
 			statistics.tournaments_played,
 		),
 		tournamentPoints: statistics.tournament_points,
-		duelsPlayed: statistics.duels_played,
-		duelsWon: statistics.duels_won,
-		duelsWonPercent: percent(statistics.duels_won, statistics.duels_played),
 	});
 }

@@ -1,4 +1,4 @@
-import { Composer, InlineKeyboard } from "grammy";
+import { Composer } from "grammy";
 import { humanTurnTime, parseTournamentTimerValue } from "../bot/format.ts";
 import {
 	messageThreadId,
@@ -7,10 +7,8 @@ import {
 	userRef,
 } from "../bot/handlers.ts";
 import type { Context } from "../bot.ts";
-import { MAX_GUESSES } from "../game/guess.ts";
 import {
 	activeGame,
-	createDuel,
 	createTournament,
 	joinTournament,
 	openTournament,
@@ -112,32 +110,6 @@ tournamentComposer.command("round", async (context) => {
 		parse_mode: "HTML",
 		reply_markup: lobbyKeyboard(tournament),
 	});
-});
-
-tournamentComposer.command("duel", async (context) => {
-	if (context.chat.type === "private") {
-		return void (await context.text("tournament.duelGroupOnly"));
-	}
-	const user = userRef(context);
-	const duel = await createDuel(
-		context.chat.id,
-		user,
-		messageThreadId(context) ?? null,
-	);
-	const link = `https://t.me/${context.me.username}?start=duel_${duel.id}`;
-	await context.text(
-		"tournament.duelChallenge",
-		{
-			player: user.name,
-			maxGuesses: MAX_GUESSES,
-		},
-		{
-			reply_markup: new InlineKeyboard().url(
-				context.t("tournament.buttonDuel"),
-				link,
-			),
-		},
-	);
 });
 
 tournamentComposer.callbackQuery(/^t:join:(\d+)$/, async (context) => {

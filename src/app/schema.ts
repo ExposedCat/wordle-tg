@@ -67,7 +67,7 @@ export interface GuessEntry {
 	ts: number;
 }
 
-export type GameKind = "normal" | "tournament" | "duel" | "oneshot";
+export type GameKind = "normal" | "tournament" | "oneshot";
 export type GameStatus = "active" | "paused" | "solved" | "lost";
 
 export interface GameRow {
@@ -81,7 +81,6 @@ export interface GameRow {
 	started_at: number;
 	finished_at: number | null;
 	tournament_id: number | null;
-	duel_id: number | null;
 	daily_date: string | null;
 }
 
@@ -126,31 +125,6 @@ export type TournamentSqlRow = Omit<TournamentRow, "players" | "scores"> & {
 	scores: string;
 };
 
-export type DuelStatus = "pending" | "active" | "done" | "cancelled";
-
-export interface DuelPlayerResult {
-	userId: number;
-	userName: string;
-	guesses: number | null; // null = not finished
-	solved: boolean;
-	ms: number | null; // time to finish
-}
-
-export interface DuelRow {
-	id: number;
-	chat_id: number; // group chat where the duel was created/announced
-	message_thread_id: number | null; // forum topic where the duel was created/announced
-	answer: string;
-	status: DuelStatus;
-	challenger: DuelPlayerResult;
-	opponent: DuelPlayerResult | null;
-}
-
-export type DuelSqlRow = Omit<DuelRow, "challenger" | "opponent"> & {
-	challenger: string;
-	opponent: string | null;
-};
-
 export interface StatsRow {
 	chat_id: number;
 	user_id: number;
@@ -176,8 +150,6 @@ export interface StatsRow {
 	tournaments_played: number;
 	tournaments_won: number;
 	tournament_points: number;
-	duels_played: number;
-	duels_won: number;
 }
 
 export type DatabaseSchema = {
@@ -196,7 +168,6 @@ export type DatabaseSchema = {
 		started_at: number;
 		finished_at: number | null;
 		tournament_id: number | null;
-		duel_id: number | null;
 		daily_date: string | null;
 	};
 	daily_words: {
@@ -224,15 +195,6 @@ export type DatabaseSchema = {
 		turn_started_at: number | null;
 		message_thread_id: number | null;
 		created_by: number;
-	};
-	duels: {
-		id: GeneratedColumn<number>;
-		chat_id: number;
-		message_thread_id: number | null;
-		answer: string;
-		status: DefaultColumn<DuelStatus>;
-		challenger: string;
-		opponent: string | null;
 	};
 	board_messages: {
 		chat_id: number;

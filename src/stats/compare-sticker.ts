@@ -118,13 +118,6 @@ function compareMetrics(
 			rightScore: percentScore(right.tournaments_won, right.tournaments_played),
 		},
 		{
-			label: "Duels",
-			left: percentText(left.duels_won, left.duels_played),
-			right: percentText(right.duels_won, right.duels_played),
-			leftScore: percentScore(left.duels_won, left.duels_played),
-			rightScore: percentScore(right.duels_won, right.duels_played),
-		},
-		{
 			label: "Quality",
 			left: leftQuality === null ? "n/a" : String(leftQuality),
 			right: rightQuality === null ? "n/a" : String(rightQuality),

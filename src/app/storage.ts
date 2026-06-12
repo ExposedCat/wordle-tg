@@ -7,7 +7,7 @@ type TableInfoRow = { name: string };
 
 async function hasColumn(
 	database: Database,
-	table: "tournaments" | "duels" | "games" | "stats",
+	table: "tournaments" | "games" | "stats",
 	columnName: string,
 ): Promise<boolean> {
 	const result =
@@ -19,7 +19,7 @@ async function hasColumn(
 
 async function addColumnIfMissing(
 	database: Database,
-	table: "tournaments" | "duels" | "games" | "stats",
+	table: "tournaments" | "games" | "stats",
 	columnName: string,
 	definition: string,
 ): Promise<void> {
@@ -54,7 +54,6 @@ async function migrate(database: Database): Promise<void> {
 		.addColumn("started_at", "integer", (column) => column.notNull())
 		.addColumn("finished_at", "integer")
 		.addColumn("tournament_id", "integer")
-		.addColumn("duel_id", "integer")
 		.addColumn("daily_date", "text")
 		.execute();
 	await database.schema
@@ -113,19 +112,6 @@ async function migrate(database: Database): Promise<void> {
 		.addColumn("turn_started_at", "integer")
 		.addColumn("message_thread_id", "integer")
 		.addColumn("created_by", "integer", (column) => column.notNull())
-		.execute();
-	await database.schema
-		.createTable("duels")
-		.ifNotExists()
-		.addColumn("id", "integer", (column) => column.primaryKey().autoIncrement())
-		.addColumn("chat_id", "integer", (column) => column.notNull())
-		.addColumn("message_thread_id", "integer")
-		.addColumn("answer", "text", (column) => column.notNull())
-		.addColumn("status", "text", (column) =>
-			column.notNull().defaultTo("pending"),
-		)
-		.addColumn("challenger", "text", (column) => column.notNull())
-		.addColumn("opponent", "text")
 		.execute();
 	await database.schema
 		.createTable("board_messages")
@@ -197,12 +183,6 @@ async function migrate(database: Database): Promise<void> {
 		.addColumn("tournament_points", "integer", (column) =>
 			column.notNull().defaultTo(0),
 		)
-		.addColumn("duels_played", "integer", (column) =>
-			column.notNull().defaultTo(0),
-		)
-		.addColumn("duels_won", "integer", (column) =>
-			column.notNull().defaultTo(0),
-		)
 		.addPrimaryKeyConstraint("stats_pk", ["chat_id", "user_id"])
 		.execute();
 
@@ -221,12 +201,6 @@ async function migrate(database: Database): Promise<void> {
 	await addColumnIfMissing(
 		database,
 		"tournaments",
-		"message_thread_id",
-		"message_thread_id INTEGER",
-	);
-	await addColumnIfMissing(
-		database,
-		"duels",
 		"message_thread_id",
 		"message_thread_id INTEGER",
 	);

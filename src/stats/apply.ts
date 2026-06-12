@@ -1,13 +1,11 @@
 import {
 	bumpStats,
 	type Database,
-	type DuelRow,
 	type GameRow,
 	getStats,
 	type TournamentPlayer,
 	type TournamentRow,
 } from "../app/data.ts";
-import { duelWinner } from "../game/duel.ts";
 import type { GuessQuality } from "../game/guess-quality.ts";
 import type { TileStatus } from "../game/score.ts";
 
@@ -78,16 +76,6 @@ export async function applyTournamentStats(
 			tournaments_played: 1,
 			tournaments_won: winners.some((w) => w.userId === p.userId) ? 1 : 0,
 			tournament_points: t.scores[String(p.userId)] ?? 0,
-		});
-	}
-}
-
-export async function applyDuelStats(db: Database, d: DuelRow): Promise<void> {
-	const winner = duelWinner(d);
-	for (const p of [d.challenger, d.opponent!]) {
-		await bumpStats(db, d.chat_id, p.userId, p.userName, {
-			duels_played: 1,
-			duels_won: winner !== "draw" && winner?.userId === p.userId ? 1 : 0,
 		});
 	}
 }

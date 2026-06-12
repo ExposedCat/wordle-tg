@@ -40,7 +40,6 @@ export const COMMANDS = [
 	{ command: "round", description: defaultText("command.round") },
 	{ command: "fails", description: defaultText("command.fails") },
 	{ command: "timer", description: defaultText("command.timer") },
-	{ command: "duel", description: defaultText("command.duel") },
 	{ command: "usepack", description: defaultText("command.usepack") },
 	{
 		command: "creativity",

@@ -1,5 +1,4 @@
 export * from "../game/board-messages.ts";
-export * from "../game/duel-storage.ts";
 export * from "../game/personal-scopes.ts";
 export * from "../game/storage.ts";
 export * from "../game/used-words.ts";

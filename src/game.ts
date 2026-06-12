@@ -100,21 +100,6 @@ export const expireTournamentTurn = (
 	turnStartedAt: number,
 ) => game().expireTournamentTurn(tournamentId, turnStartedAt);
 
-export const createDuel = (
-	chatId: number,
-	challenger: UserRef,
-	messageThreadId: number | null = null,
-) => game().createDuel(chatId, challenger, messageThreadId);
-
-export const acceptDuel = (
-	duelId: number,
-	privateChatId: number,
-	user: UserRef,
-) => game().acceptDuel(duelId, privateChatId, user);
-
-export const duelWinner = (duel: Parameters<GameService["duelWinner"]>[0]) =>
-	game().duelWinner(duel);
-
 export const statsFor = (chatId: number, userId: number) =>
 	game().statsFor(chatId, userId);
 

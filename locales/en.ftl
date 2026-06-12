@@ -16,7 +16,6 @@ command =
     .round = Start a turn-based tournament
     .fails = Set tournament rejected-guess limit
     .timer = Set tournament turn timer
-    .duel = Duel a friend
     .usepack = Use an existing custom emoji pack
     .creativity = Toggle or configure recent-word bans
     .normal = Set normal mode
@@ -55,12 +54,6 @@ partial =
     .oneshotExpert = expert
 
 game =
-    .duelGone = This duel no longer exists or is already finished.
-    .duelFull = This duel already has two players.
-    .duelAlreadyPlaying = You already played your board for this duel.
-    .duelOwnGameRunning = Finish your current game here first (/stop to abandon it).
-    .duelAccepted = ⚔️ Duel on! Same word as your opponent, 6 tries. Just type your { $length }-letter guesses.
-    .duelBoard = Your duel board:
     .tournamentOpen = A tournament is open in this chat — finish it with /stop first.
     .gameAlreadyRunning = A game is already running! Check /board or /stop to abandon it.
     .personalAlreadyRunning = You already have a personal game running! Check /board or /stop to abandon it.
@@ -84,7 +77,6 @@ game =
     .notAllowed = <tg-emoji emoji-id="5924719252379537729">🤔</tg-emoji> "{ $word }" is not allowed.{ $rejectStatus }
     .creativityBlocked = <tg-emoji emoji-id="5872829476143894491">🚫</tg-emoji> Creativity mode: { $word } was used recently here. Try something fresh!{ $rejectStatus }
     .notYourTurn = <tg-emoji emoji-id="5776213190387961618">⏳</tg-emoji> Not so fast — it's { $player }'s turn.
-    .outOfGuessesSecret = <tg-emoji emoji-id="5897962422169243693">💀</tg-emoji> Out of guesses! The word stays secret until your opponent finishes.
     .outOfGuessesAnswer = <tg-emoji emoji-id="5897962422169243693">💀</tg-emoji> Out of guesses! The word was { $answer }
     .tournamentSolved = 🎉 { $player } got it in { $guessNumber }/{ $maxGuesses } +{ $points }. { $answer }
     .solved = 🎉 { $player } got it in { $guessNumber }/{ $maxGuesses }. { $answer }
@@ -94,18 +86,6 @@ game =
         { $standings }
         
         <tg-emoji emoji-id="5807868868886009920">👑</tg-emoji> Winner{ $plural }: { $winners }
-    .duelBoardDone = ⚔️ Your board is done! I will announce the result once your opponent finishes.
-    .duelResultSolved = { $player }: solved in { $guesses }/{ $maxGuesses } ({ $time })
-    .duelResultFailed = { $player }: failed
-    .duelDraw = 🤝 It's a draw!
-    .duelWinner = 👑 { $player } wins the duel!
-    .duelFinished = ⚔️ Duel finished! The word was { $answer }
-        
-        { $challenger }
-        { $opponent }
-        
-        { $verdict }
-
 preferences =
     .auto = Guess without /w { $state }
         { $instruction }
@@ -167,13 +147,6 @@ tournament =
     .roundUsage = Usage: /round [N]. Use /stop to end an open tournament.
     .finishGameFirst = Finish the current game first (/stop to abandon it).
     .createFailed = Could not create a tournament right now.
-    .duelGroupOnly = Use /duel in a group — that is where I announce the winner!
-    .duelChallenge = ⚔️ { $player } challenges the chat to a duel!
-        
-        Same secret word for both players, { $maxGuesses } tries each in a private chat with me. Fewest guesses wins; speed breaks ties.
-        
-        First person to tap becomes the opponent. { $player }, tap too to play your board!
-    .buttonDuel = ⚔️ Play the duel
     .joinClosed = This tournament is not open for joining.
     .alreadyIn = You are already in!
     .joined = Joined! 🏆
@@ -272,11 +245,6 @@ help =
         
         /timer 90s · { $timer }
         Sets a max time per turn. Send /timer with no value to disable it.
-        
-        <tg-emoji emoji-id="5944940516754853337">⚔️</tg-emoji> Duels
-        /duel
-        Both players get the same word in private chat.
-        Fewest guesses wins; speed breaks ties.
     .stats = <tg-emoji emoji-id="5778575233422200567">👤</tg-emoji> Stats
         
         /profile
@@ -348,7 +316,4 @@ format =
         
         <tg-emoji emoji-id="5942877472163892475">👥</tg-emoji> Tournaments
         { $tournamentsPlayed } total · { $tournamentsWon } won ({ $tournamentsWonPercent }%) · { $tournamentPoints } points
-        
-        <tg-emoji emoji-id="5944940516754853337">⚔️</tg-emoji> Duels
-        { $duelsPlayed } total · { $duelsWon } won ({ $duelsWonPercent }%)
     .standingsPoints = { $rank } { $player } — { $points } pts

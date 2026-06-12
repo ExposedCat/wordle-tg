@@ -55,7 +55,7 @@ export async function createGame(
 	answer: string,
 	language: WordLanguage,
 	kind: GameKind = "normal",
-	opts: { tournamentId?: number; duelId?: number; dailyDate?: string } = {},
+	opts: { tournamentId?: number; dailyDate?: string } = {},
 ): Promise<GameRow> {
 	const now = Date.now();
 	const result = await db
@@ -68,7 +68,6 @@ export async function createGame(
 			started_at: now,
 			finished_at: null,
 			tournament_id: opts.tournamentId ?? null,
-			duel_id: opts.duelId ?? null,
 			daily_date: opts.dailyDate ?? null,
 		})
 		.executeTakeFirst();

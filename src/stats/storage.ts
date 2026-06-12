@@ -88,9 +88,7 @@ export async function getGlobalStats(
 				MIN(fastest_ms) AS fastest_ms,
 				COALESCE(SUM(tournaments_played), 0) AS tournaments_played,
 				COALESCE(SUM(tournaments_won), 0) AS tournaments_won,
-				COALESCE(SUM(tournament_points), 0) AS tournament_points,
-				COALESCE(SUM(duels_played), 0) AS duels_played,
-				COALESCE(SUM(duels_won), 0) AS duels_won
+				COALESCE(SUM(tournament_points), 0) AS tournament_points
 				FROM stats
 				WHERE user_id = ${userId}`.execute(db)
 		).rows[0],

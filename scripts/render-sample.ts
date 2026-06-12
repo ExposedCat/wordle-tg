@@ -31,7 +31,6 @@ const game: GameRow = {
 	started_at: 0,
 	finished_at: null,
 	tournament_id: null,
-	duel_id: null,
 	daily_date: null,
 };
 
