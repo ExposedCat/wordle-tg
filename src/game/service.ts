@@ -214,7 +214,9 @@ function dateKey(date: Date): string {
 }
 
 async function fetchNytWordleAnswer(date: string, fetchImpl: FetchLike): Promise<string> {
-  const response = await fetchImpl(`https://www.nytimes.com/svc/wordle/v2/${date}.json`);
+  const url = `https://www.nytimes.com/svc/wordle/v2/${date}.json`;
+  console.info('Fetching NYT daily Wordle', { date, url });
+  const response = await fetchImpl(url);
   if (!response.ok) throw new Error(`NYT Wordle fetch failed: ${response.status} ${response.statusText}`);
 
   const payload = (await response.json()) as { solution?: unknown };
