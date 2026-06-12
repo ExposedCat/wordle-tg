@@ -24,10 +24,9 @@ const ROAST_INSTRUCTIONS = [
 	"Punish this weak Wordle guess with one roast: ",
 ] as const;
 const ROAST_RULES = [
-	"Use nasty, sarcastic, dark savvy humor.",
+	"Use nasty, sarcastic, dark savvy humor. Not boring, flat schoolyard humor, but a serious, sharp roasting.",
 	"Reply in the same language/alphabet as the guessed word.",
 	"Exactly one short sentence.",
-	"Sound like an annoyed friend in a group chat.",
 	"Joke must be sarcastic, non-flat, and not too obvious. It must be deep and smart, and it must roast the guesser.",
 	"You are strictly unallowed to use analogies or comparisons.",
 	"Do not mention scores, numbers, possible words, remaining words, averages, or quality.",

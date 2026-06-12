@@ -1,4 +1,4 @@
-import type { Canvas, CanvasRenderingContext2D } from "@gfx/canvas";
+import { type Canvas, type CanvasRenderingContext2D, Fonts } from "@gfx/canvas";
 
 export const COLORS = {
 	bg: "#121213",
@@ -14,10 +14,31 @@ export const COLORS = {
 	panel2: "#2f3033",
 };
 
-export const FONT = "sans-serif";
+const FONT_FAMILY = "NYT-Franklin";
+const FONT_ASSET_DIR = new URL("../../assets/fonts/", import.meta.url);
+const FONT_ASSET_PATTERN = /^NYT[-_ ]?Franklin.*\.(otf|ttf|woff2?)$/i;
+
+registerFont(FONT_FAMILY);
+
+export const FONT = `"${FONT_FAMILY}", sans-serif`;
 export const STICKER_WIDTH = 512;
 export const STICKER_HEIGHT = 512;
 export const WEBP_QUALITY = 100;
+
+function registerFont(alias: string): void {
+	try {
+		for (const entry of Deno.readDirSync(FONT_ASSET_DIR)) {
+			if (!entry.isFile || !FONT_ASSET_PATTERN.test(entry.name)) continue;
+			Fonts.register(
+				Deno.readFileSync(new URL(entry.name, FONT_ASSET_DIR)),
+				alias,
+			);
+			return;
+		}
+	} catch {
+		// Fall back to the system font collection when the bundled asset is absent.
+	}
+}
 
 export function encodeSticker(canvas: Canvas): Uint8Array {
 	return canvas.encode("webp", WEBP_QUALITY);
