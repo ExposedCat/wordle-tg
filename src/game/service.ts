@@ -53,6 +53,9 @@ import {
 	isValidWord,
 	pickAnswer,
 } from "../engine/words.ts";
+import { createLogger } from "../log.ts";
+
+const log = createLogger("game");
 
 export const MAX_GUESSES = 6;
 
@@ -169,21 +172,19 @@ function logGuessQuality(input: {
 		guessNumber: input.guessNumber,
 	};
 
-	console.debug(
-		"[guess-quality]",
-		JSON.stringify(
-			input.quality
-				? {
-						...base,
-						possible: input.quality.possibleCount,
-						remaining: input.quality.actualRemaining,
-						average: roundedQualityValue(input.quality.averageRemaining),
-						points: input.quality.points,
-						belowAverage:
-							input.quality.actualRemaining > input.quality.averageRemaining,
-					}
-				: { ...base, quality: "skipped" },
-		),
+	log.debug(
+		"Guess quality",
+		input.quality
+			? {
+					...base,
+					possible: input.quality.possibleCount,
+					remaining: input.quality.actualRemaining,
+					average: roundedQualityValue(input.quality.averageRemaining),
+					points: input.quality.points,
+					belowAverage:
+						input.quality.actualRemaining > input.quality.averageRemaining,
+				}
+			: { ...base, quality: "skipped" },
 	);
 }
 
@@ -254,7 +255,7 @@ async function fetchNytWordleAnswer(
 	fetchImpl: FetchLike,
 ): Promise<string> {
 	const url = `https://www.nytimes.com/svc/wordle/v2/${date}.json`;
-	console.info("Fetching NYT daily Wordle", { date, url });
+	log.debug("Fetching NYT daily Wordle", { date, url });
 	const response = await fetchImpl(url);
 	if (!response.ok)
 		throw new Error(
@@ -286,40 +287,66 @@ export class GameService {
 		this.now = opts.now ?? (() => new Date());
 	}
 
-	settings(chatId: number): ChatSettings {
+	settings(chatId: number): Promise<ChatSettings> {
 		return getSettings(this.db, chatId);
 	}
 
-	saveSettings(chatId: number, s: ChatSettings): void {
-		saveSettings(this.db, chatId, s);
+	saveSettings(chatId: number, s: ChatSettings): Promise<void> {
+		log.debug("Saving chat settings", {
+			chatId,
+			language: s.language,
+			wordLength: s.wordLength,
+			bareWord: s.bareWord,
+			cleanup: s.cleanup,
+			roast: s.roast,
+			difficulty: s.difficulty,
+			oneshotDifficulty: s.oneshotDifficulty,
+			creativityEnabled: s.creativity.enabled,
+			tournamentMaxFails: s.tournamentMaxFails,
+			tournamentTurnSeconds: s.tournamentTurnSeconds,
+			hasEmojiPack: s.emojiPack !== null,
+		});
+		return saveSettings(this.db, chatId, s);
 	}
 
-	setLanguage(chatId: number, language: WordLanguage): ChatSettings {
-		const s = getSettings(this.db, chatId);
+	async setLanguage(
+		chatId: number,
+		language: WordLanguage,
+	): Promise<ChatSettings> {
+		const s = await getSettings(this.db, chatId);
 		s.language = language;
-		saveSettings(this.db, chatId, s);
+		await saveSettings(this.db, chatId, s);
+		log.debug("Set language", { chatId, language });
 		return s;
 	}
 
-	setWordLength(chatId: number, length: number): ChatSettings | null {
+	async setWordLength(
+		chatId: number,
+		length: number,
+	): Promise<ChatSettings | null> {
 		if (!isSupportedWordLength(length)) return null;
-		const s = getSettings(this.db, chatId);
+		const s = await getSettings(this.db, chatId);
 		s.wordLength = length;
-		saveSettings(this.db, chatId, s);
+		await saveSettings(this.db, chatId, s);
+		log.debug("Set word length", { chatId, length });
 		return s;
 	}
 
-	setOneshotDifficulty(
+	async setOneshotDifficulty(
 		chatId: number,
 		difficulty: OneshotDifficulty,
-	): ChatSettings {
-		const s = getSettings(this.db, chatId);
+	): Promise<ChatSettings> {
+		const s = await getSettings(this.db, chatId);
 		s.oneshotDifficulty = difficulty;
-		saveSettings(this.db, chatId, s);
+		await saveSettings(this.db, chatId, s);
+		log.debug("Set oneshot difficulty", { chatId, difficulty });
 		return s;
 	}
 
-	boardMessageIds(chatId: number, messageThreadId: number | null): number[] {
+	boardMessageIds(
+		chatId: number,
+		messageThreadId: number | null,
+	): Promise<number[]> {
 		return getBoardMessageIds(this.db, chatId, messageThreadId);
 	}
 
@@ -327,44 +354,70 @@ export class GameService {
 		chatId: number,
 		messageThreadId: number | null,
 		messageIds: number[],
-	): void {
-		saveBoardMessageIds(this.db, chatId, messageThreadId, messageIds);
+	): Promise<void> {
+		return saveBoardMessageIds(this.db, chatId, messageThreadId, messageIds);
 	}
 
-	activeGame(chatId: number): GameRow | null {
+	activeGame(chatId: number): Promise<GameRow | null> {
 		return getActiveGame(this.db, chatId);
 	}
 
-	openTournament(chatId: number): TournamentRow | null {
+	openTournament(chatId: number): Promise<TournamentRow | null> {
 		return getOpenTournament(this.db, chatId);
 	}
 
-	getTournament(tournamentId: number): TournamentRow | null {
+	getTournament(tournamentId: number): Promise<TournamentRow | null> {
 		return getTournament(this.db, tournamentId);
 	}
 
-	activeTournaments(): TournamentRow[] {
+	activeTournaments(): Promise<TournamentRow[]> {
 		return getActiveTournaments(this.db);
 	}
 
 	/** Start a regular game. Returns null if a game is already running. */
-	startGame(chatId: number): GameRow | null {
-		if (getActiveGame(this.db, chatId)) return null;
-		const s = getSettings(this.db, chatId);
+	async startGame(chatId: number): Promise<GameRow | null> {
+		if (await getActiveGame(this.db, chatId)) {
+			log.debug("Start game blocked by active game", { chatId });
+			return null;
+		}
+		const s = await getSettings(this.db, chatId);
 		const answer = pickAnswer(
 			s.language,
 			s.wordLength,
-			recentWords(this.db, chatId, s.creativity),
+			await recentWords(this.db, chatId, s.creativity),
 		);
-		return createGame(this.db, chatId, answer, s.language, "normal");
+		const game = await createGame(
+			this.db,
+			chatId,
+			answer,
+			s.language,
+			"normal",
+		);
+		log.debug("Started game", {
+			chatId,
+			gameId: game.id,
+			language: game.language,
+			wordLength: game.answer.length,
+		});
+		return game;
 	}
 
-	startOneshot(chatId: number): OneshotPuzzle | null {
-		if (getActiveGame(this.db, chatId)) return null;
-		const settings = getSettings(this.db, chatId);
+	async startOneshot(chatId: number): Promise<OneshotPuzzle | null> {
+		if (await getActiveGame(this.db, chatId)) {
+			log.debug("Start oneshot blocked by active game", { chatId });
+			return null;
+		}
+		const settings = await getSettings(this.db, chatId);
 		const words = answersForLanguage(settings.language, settings.wordLength);
 		const target = ONESHOT_TARGETS[settings.oneshotDifficulty];
-		if (impossibleOneshotTarget(settings.wordLength, target)) return null;
+		if (impossibleOneshotTarget(settings.wordLength, target)) {
+			log.warn("Start oneshot blocked by impossible target", {
+				chatId,
+				wordLength: settings.wordLength,
+				difficulty: settings.oneshotDifficulty,
+			});
+			return null;
+		}
 
 		for (const opener of shuffled(words)) {
 			const candidates = words.filter(
@@ -376,7 +429,7 @@ export class GameService {
 
 			const answer = randomItem(candidates);
 			const now = Date.now();
-			const game = createGame(
+			const game = await createGame(
 				this.db,
 				chatId,
 				answer,
@@ -389,126 +442,238 @@ export class GameService {
 				userName: "One-shot",
 				ts: now,
 			});
-			updateGame(this.db, game);
+			await updateGame(this.db, game);
+			log.debug("Started oneshot game", {
+				chatId,
+				gameId: game.id,
+				language: game.language,
+				wordLength: game.answer.length,
+				difficulty: settings.oneshotDifficulty,
+			});
 
 			return {
 				mode: settings.oneshotDifficulty,
-				game: getActiveGame(this.db, chatId)!,
+				game: (await getActiveGame(this.db, chatId))!,
 				opener,
 				answer,
 				score: scoreGuess(answer, opener),
 			};
 		}
 
+		log.warn("Start oneshot failed to find candidate", {
+			chatId,
+			language: settings.language,
+			wordLength: settings.wordLength,
+			difficulty: settings.oneshotDifficulty,
+		});
 		return null;
 	}
 
-	personalGameChatId(chatId: number, userId: number): number {
+	personalGameChatId(chatId: number, userId: number): Promise<number> {
 		return getOrCreatePersonalScopeChatId(this.db, chatId, userId);
 	}
 
-	activePersonalGame(
+	async activePersonalGame(
 		chatId: number,
 		userId: number,
-	): { chatId: number; game: GameRow } | null {
-		const personalChatId = getPersonalScopeChatId(this.db, chatId, userId);
+	): Promise<{ chatId: number; game: GameRow } | null> {
+		const personalChatId = await getPersonalScopeChatId(
+			this.db,
+			chatId,
+			userId,
+		);
 		if (personalChatId === null) return null;
-		const game = getActiveGame(this.db, personalChatId);
+		const game = await getActiveGame(this.db, personalChatId);
 		return game ? { chatId: personalChatId, game } : null;
 	}
 
 	/** Start a personal game in this chat for one user. Returns null if their personal game is already running. */
-	startPersonalGame(
+	async startPersonalGame(
 		chatId: number,
 		userId: number,
-	): { chatId: number; game: GameRow } | null {
-		const personalChatId = this.personalGameChatId(chatId, userId);
-		if (getActiveGame(this.db, personalChatId)) return null;
-		saveSettings(this.db, personalChatId, getSettings(this.db, chatId));
-		const game = this.startGame(personalChatId);
+	): Promise<{ chatId: number; game: GameRow } | null> {
+		const personalChatId = await this.personalGameChatId(chatId, userId);
+		if (await getActiveGame(this.db, personalChatId)) {
+			log.debug("Start personal game blocked by active personal game", {
+				chatId,
+				personalChatId,
+				userId,
+			});
+			return null;
+		}
+		await saveSettings(
+			this.db,
+			personalChatId,
+			await getSettings(this.db, chatId),
+		);
+		const game = await this.startGame(personalChatId);
+		if (game)
+			log.debug("Started personal game", {
+				chatId,
+				personalChatId,
+				userId,
+				gameId: game.id,
+			});
 		return game ? { chatId: personalChatId, game } : null;
 	}
 
 	/** Start today's normal daily game. The answer is shared per date/language and each chat can finish it once. */
 	async startDailyGame(chatId: number): Promise<StartDailyGameOutcome> {
-		const active = getActiveGame(this.db, chatId);
-		if (active) return { type: "active", game: active };
+		const active = await getActiveGame(this.db, chatId);
+		if (active) {
+			log.debug("Start daily blocked by active game", {
+				chatId,
+				gameId: active.id,
+			});
+			return { type: "active", game: active };
+		}
 
-		const settings = getSettings(this.db, chatId);
+		const settings = await getSettings(this.db, chatId);
 		const language = settings.language;
 		const date = dateKey(this.now());
-		const completed = getCompletedDailyGame(this.db, chatId, date, language);
-		if (completed)
+		const completed = await getCompletedDailyGame(
+			this.db,
+			chatId,
+			date,
+			language,
+		);
+		if (completed) {
+			log.debug("Daily already completed", {
+				chatId,
+				gameId: completed.id,
+				date,
+				language,
+			});
 			return { type: "already_done", word: completed.answer, game: completed };
+		}
 
-		const paused = getPausedDailyGame(this.db, chatId, date, language);
+		const paused = await getPausedDailyGame(this.db, chatId, date, language);
 		if (paused) {
 			paused.status = "active";
 			paused.finished_at = null;
-			updateGame(this.db, paused);
-			return { type: "resumed", game: getActiveGame(this.db, chatId)! };
+			await updateGame(this.db, paused);
+			log.debug("Resumed daily game", {
+				chatId,
+				gameId: paused.id,
+				date,
+				language,
+			});
+			return { type: "resumed", game: (await getActiveGame(this.db, chatId))! };
 		}
 
 		const answer = await this.dailyAnswer(date, language);
-		const game = createGame(this.db, chatId, answer, language, "normal", {
+		const game = await createGame(this.db, chatId, answer, language, "normal", {
 			dailyDate: date,
+		});
+		log.debug("Started daily game", {
+			chatId,
+			gameId: game.id,
+			date,
+			language,
 		});
 		return { type: "started", game };
 	}
 
 	/** Abort the current game, or cancel an open tournament lobby. Returns the revealed answer when it can be shown. */
-	giveUp(chatId: number): GiveUpOutcome | null {
-		const game = getActiveGame(this.db, chatId);
+	async giveUp(chatId: number): Promise<GiveUpOutcome | null> {
+		const game = await getActiveGame(this.db, chatId);
 		if (!game) {
-			const t = getOpenTournament(this.db, chatId);
-			if (!t || t.status !== "joining") return null;
+			const t = await getOpenTournament(this.db, chatId);
+			if (!t || t.status !== "joining") {
+				log.debug("Give up ignored without active game or cancellable lobby", {
+					chatId,
+				});
+				return null;
+			}
 			t.status = "cancelled";
-			updateTournament(this.db, t);
+			await updateTournament(this.db, t);
+			log.debug("Cancelled tournament lobby via give up", {
+				chatId,
+				tournamentId: t.id,
+			});
 			return { answer: null, tournamentCancelled: true, daily: false };
 		}
 		const daily = game.daily_date !== null;
 		game.status = daily ? "paused" : "lost";
 		game.finished_at = daily ? null : Date.now();
-		updateGame(this.db, game);
+		await updateGame(this.db, game);
+		log.debug("Gave up active game", {
+			chatId,
+			gameId: game.id,
+			kind: game.kind,
+			status: game.status,
+			daily,
+		});
 		if (!daily && game.kind !== "oneshot")
-			recordUsedWord(this.db, chatId, game.answer);
+			await recordUsedWord(this.db, chatId, game.answer);
 		let tournamentCancelled = false;
 		if (game.tournament_id) {
-			const t = getTournament(this.db, game.tournament_id);
+			const t = await getTournament(this.db, game.tournament_id);
 			if (t && (t.status === "active" || t.status === "joining")) {
 				t.status = "cancelled";
-				updateTournament(this.db, t);
+				await updateTournament(this.db, t);
 				tournamentCancelled = true;
+				log.debug("Cancelled tournament due to give up", {
+					chatId,
+					tournamentId: t.id,
+					gameId: game.id,
+				});
 			}
 		}
 		return { answer: daily ? null : game.answer, tournamentCancelled, daily };
 	}
 
-	submitGuess(chatId: number, user: UserRef, rawWord: string): GuessOutcome {
+	async submitGuess(
+		chatId: number,
+		user: UserRef,
+		rawWord: string,
+	): Promise<GuessOutcome> {
 		const word = rawWord.trim().toLowerCase();
-		const game = getActiveGame(this.db, chatId);
-		if (!game) return { type: "no_game" };
+		const game = await getActiveGame(this.db, chatId);
+		if (!game) {
+			log.debug("Guess ignored without active game", {
+				chatId,
+				userId: user.id,
+				wordLength: word.length,
+			});
+			return { type: "no_game" };
+		}
 
 		// Tournament turn enforcement happens before word validation so out-of-turn
 		// players do not learn anything from dictionary or rule checks.
 		let tournament: TournamentRow | null = null;
 		let currentTournamentPlayer: TournamentPlayer | null = null;
 		if (game.kind === "tournament" && game.tournament_id) {
-			tournament = getTournament(this.db, game.tournament_id);
+			tournament = await getTournament(this.db, game.tournament_id);
 			if (tournament && tournament.status === "active") {
-				if (!tournament.players.some((p) => p.userId === user.id))
+				if (!tournament.players.some((p) => p.userId === user.id)) {
+					log.debug("Tournament guess ignored from non-player", {
+						chatId,
+						gameId: game.id,
+						tournamentId: tournament.id,
+						userId: user.id,
+					});
 					return { type: "ignored" };
+				}
 				const order = roundOrder(tournament.players, tournament.current_round);
 				currentTournamentPlayer = order[tournament.turn_idx % order.length];
-				if (currentTournamentPlayer.userId !== user.id)
+				if (currentTournamentPlayer.userId !== user.id) {
+					log.debug("Tournament guess rejected out of turn", {
+						chatId,
+						gameId: game.id,
+						tournamentId: tournament.id,
+						userId: user.id,
+						currentUserId: currentTournamentPlayer.userId,
+					});
 					return {
 						type: "not_your_turn",
 						currentPlayer: currentTournamentPlayer,
 					};
+				}
 			}
 		}
 
-		const settings = getSettings(this.db, chatId);
+		const settings = await getSettings(this.db, chatId);
 		const isOneshot = game.kind === "oneshot";
 
 		const tournamentReject = () =>
@@ -522,10 +687,28 @@ export class GameService {
 
 		const wordLength = game.answer.length;
 		if (word !== game.answer && !isValidWord(word, game.language, wordLength)) {
-			return { type: "not_a_word", word, rejectStatus: tournamentReject() };
+			log.debug("Guess rejected as invalid word", {
+				chatId,
+				gameId: game.id,
+				userId: user.id,
+				language: game.language,
+				wordLength,
+			});
+			return {
+				type: "not_a_word",
+				word,
+				rejectStatus: await tournamentReject(),
+			};
 		}
-		if (game.guesses.some((g) => g.word === word))
+		if (game.guesses.some((g) => g.word === word)) {
+			log.debug("Guess rejected as duplicate", {
+				chatId,
+				gameId: game.id,
+				userId: user.id,
+				guessNumber: game.guesses.length + 1,
+			});
 			return { type: "already_guessed", word };
+		}
 
 		const isDuel = game.kind === "duel";
 
@@ -534,12 +717,17 @@ export class GameService {
 			!isDuel &&
 			!isOneshot &&
 			word !== game.answer &&
-			recentWords(this.db, chatId, settings.creativity).has(word)
+			(await recentWords(this.db, chatId, settings.creativity)).has(word)
 		) {
+			log.debug("Guess rejected by creativity filter", {
+				chatId,
+				gameId: game.id,
+				userId: user.id,
+			});
 			return {
 				type: "creativity_blocked",
 				word,
-				rejectStatus: tournamentReject(),
+				rejectStatus: await tournamentReject(),
 			};
 		}
 
@@ -552,14 +740,23 @@ export class GameService {
 				word,
 				superHard,
 			);
-			if (violation)
+			if (violation) {
+				log.debug("Guess rejected by hard mode", {
+					chatId,
+					gameId: game.id,
+					userId: user.id,
+					difficulty: settings.difficulty,
+					requiredCount: violation.required.length,
+					forbiddenCount: violation.forbidden.length,
+				});
 				return {
 					type: "hard_mode_violation",
 					word,
 					violation,
 					superHard,
-					rejectStatus: tournamentReject(),
+					rejectStatus: await tournamentReject(),
 				};
+			}
 		}
 
 		// accept the guess
@@ -588,11 +785,20 @@ export class GameService {
 		if (solved) game.status = "solved";
 		if (lost) game.status = "lost";
 		if (solved || lost) game.finished_at = Date.now();
-		updateGame(this.db, game);
+		await updateGame(this.db, game);
+		log.debug("Guess accepted", {
+			chatId,
+			gameId: game.id,
+			kind: game.kind,
+			userId: user.id,
+			guessNumber,
+			solved,
+			lost,
+		});
 
 		if (!isDuel && !isOneshot) {
-			recordUsedWord(this.db, chatId, word);
-			if (lost) recordUsedWord(this.db, chatId, game.answer); // revealed answer is burned too
+			await recordUsedWord(this.db, chatId, word);
+			if (lost) await recordUsedWord(this.db, chatId, game.answer); // revealed answer is burned too
 		}
 
 		const outcome: GuessOutcome = {
@@ -606,7 +812,7 @@ export class GameService {
 		};
 
 		if (isDuel) {
-			outcome.duel = this.applyDuelProgress(
+			outcome.duel = await this.applyDuelProgress(
 				game,
 				user,
 				solved,
@@ -614,11 +820,11 @@ export class GameService {
 				guessNumber,
 			);
 		} else if (!isOneshot) {
-			this.applyGuessStats(chatId, user, score, quality!);
+			await this.applyGuessStats(chatId, user, score, quality!);
 			if (solved || lost)
-				this.applyGameEndStats(chatId, game, solved, guessNumber);
+				await this.applyGameEndStats(chatId, game, solved, guessNumber);
 			if (tournament && tournament.status === "active") {
-				outcome.tournament = this.advanceTournament(
+				outcome.tournament = await this.advanceTournament(
 					tournament,
 					user,
 					solved,
@@ -632,15 +838,24 @@ export class GameService {
 
 	// ---------- tournaments ----------
 
-	createTournament(
+	async createTournament(
 		chatId: number,
 		rounds: number,
 		creator: UserRef,
 		messageThreadId: number | null = null,
-	): TournamentRow | null {
-		if (getOpenTournament(this.db, chatId) || getActiveGame(this.db, chatId))
+	): Promise<TournamentRow | null> {
+		if (
+			(await getOpenTournament(this.db, chatId)) ||
+			(await getActiveGame(this.db, chatId))
+		) {
+			log.debug("Create tournament blocked", {
+				chatId,
+				creatorId: creator.id,
+				rounds,
+			});
 			return null;
-		const t = createTournament(
+		}
+		const t = await createTournament(
 			this.db,
 			chatId,
 			rounds,
@@ -655,15 +870,21 @@ export class GameService {
 				firstName: creator.firstName ?? creator.name,
 			},
 		];
-		updateTournament(this.db, t);
+		await updateTournament(this.db, t);
+		log.debug("Created tournament lobby", {
+			chatId,
+			tournamentId: t.id,
+			creatorId: creator.id,
+			rounds,
+		});
 		return getTournament(this.db, t.id);
 	}
 
-	joinTournament(
+	async joinTournament(
 		tournamentId: number,
 		user: UserRef,
-	): TournamentRow | "closed" | "already_in" | null {
-		const t = getTournament(this.db, tournamentId);
+	): Promise<TournamentRow | "closed" | "already_in" | null> {
+		const t = await getTournament(this.db, tournamentId);
 		if (!t) return null;
 		if (t.status !== "joining") return "closed";
 		if (t.players.some((p) => p.userId === user.id)) return "already_in";
@@ -673,34 +894,55 @@ export class GameService {
 			username: user.username,
 			firstName: user.firstName ?? user.name,
 		});
-		updateTournament(this.db, t);
+		await updateTournament(this.db, t);
+		log.debug("Joined tournament lobby", {
+			chatId: t.chat_id,
+			tournamentId,
+			userId: user.id,
+			playerCount: t.players.length,
+		});
 		return getTournament(this.db, t.id);
 	}
 
-	quitTournament(
+	async quitTournament(
 		tournamentId: number,
 		userId: number,
-	): TournamentRow | "closed" | "not_in" | null {
-		const t = getTournament(this.db, tournamentId);
+	): Promise<TournamentRow | "closed" | "not_in" | null> {
+		const t = await getTournament(this.db, tournamentId);
 		if (!t) return null;
 		if (t.status !== "joining") return "closed";
 		if (!t.players.some((p) => p.userId === userId)) return "not_in";
 		t.players = t.players.filter((p) => p.userId !== userId);
 		if (t.players.length === 0) t.status = "cancelled";
-		updateTournament(this.db, t);
+		await updateTournament(this.db, t);
+		log.debug("Quit tournament lobby", {
+			chatId: t.chat_id,
+			tournamentId,
+			userId,
+			status: t.status,
+			playerCount: t.players.length,
+		});
 		return getTournament(this.db, t.id);
 	}
 
 	/** Start the tournament: first round game is created. */
-	startTournament(
+	async startTournament(
 		tournamentId: number,
-	):
+	): Promise<
 		| { t: TournamentRow; game: GameRow; firstPlayer: TournamentPlayer }
 		| "too_few"
-		| null {
-		const t = getTournament(this.db, tournamentId);
+		| null
+	> {
+		const t = await getTournament(this.db, tournamentId);
 		if (!t || t.status !== "joining") return null;
-		if (t.players.length < 2) return "too_few";
+		if (t.players.length < 2) {
+			log.debug("Start tournament blocked by too few players", {
+				chatId: t.chat_id,
+				tournamentId,
+				playerCount: t.players.length,
+			});
+			return "too_few";
+		}
 		if (t.rounds < 1) t.rounds = t.players.length;
 		t.status = "active";
 		t.current_round = 1;
@@ -708,51 +950,70 @@ export class GameService {
 		t.fail_count = 0;
 		t.turn_started_at = nextTurnStartedAt(t.turn_started_at);
 		for (const p of t.players) t.scores[String(p.userId)] = 0;
-		updateTournament(this.db, t);
-		const game = this.newTournamentGame(t);
+		await updateTournament(this.db, t);
+		const game = await this.newTournamentGame(t);
+		log.debug("Started tournament", {
+			chatId: t.chat_id,
+			tournamentId,
+			gameId: game.id,
+			rounds: t.rounds,
+			playerCount: t.players.length,
+		});
 		return {
-			t: getTournament(this.db, t.id)!,
+			t: (await getTournament(this.db, t.id))!,
 			game,
 			firstPlayer: roundOrder(t.players, 1)[0],
 		};
 	}
 
-	cancelTournament(
+	async cancelTournament(
 		chatId: number,
 		userId: number,
-	): TournamentRow | "not_allowed" | null {
-		const t = getOpenTournament(this.db, chatId);
+	): Promise<TournamentRow | "not_allowed" | null> {
+		const t = await getOpenTournament(this.db, chatId);
 		if (!t) return null;
 		if (t.created_by !== userId) return "not_allowed";
 		t.status = "cancelled";
-		updateTournament(this.db, t);
-		const game = getActiveGame(this.db, chatId);
+		await updateTournament(this.db, t);
+		log.debug("Cancelled tournament", {
+			chatId,
+			tournamentId: t.id,
+			userId,
+		});
+		const game = await getActiveGame(this.db, chatId);
 		if (game && game.tournament_id === t.id) {
 			game.status = "lost";
 			game.finished_at = Date.now();
-			updateGame(this.db, game);
-			recordUsedWord(this.db, chatId, game.answer);
+			await updateGame(this.db, game);
+			await recordUsedWord(this.db, chatId, game.answer);
 		}
 		return t;
 	}
 
-	resetActiveTournamentTurnTimer(chatId: number): TournamentRow | null {
-		const t = getOpenTournament(this.db, chatId);
+	async resetActiveTournamentTurnTimer(
+		chatId: number,
+	): Promise<TournamentRow | null> {
+		const t = await getOpenTournament(this.db, chatId);
 		if (!t || t.status !== "active") return null;
 		t.turn_started_at = nextTurnStartedAt(t.turn_started_at);
-		updateTournament(this.db, t);
+		await updateTournament(this.db, t);
+		log.debug("Reset tournament turn timer", {
+			chatId,
+			tournamentId: t.id,
+			turnStartedAt: t.turn_started_at,
+		});
 		return getTournament(this.db, t.id);
 	}
 
-	expireTournamentTurn(
+	async expireTournamentTurn(
 		tournamentId: number,
 		turnStartedAt: number,
-	): TournamentTurnExpiredOutcome | null {
-		const t = getTournament(this.db, tournamentId);
+	): Promise<TournamentTurnExpiredOutcome | null> {
+		const t = await getTournament(this.db, tournamentId);
 		if (!t || t.status !== "active" || t.turn_started_at !== turnStartedAt)
 			return null;
 
-		const game = getActiveGame(this.db, t.chat_id);
+		const game = await getActiveGame(this.db, t.chat_id);
 		if (!game || game.kind !== "tournament" || game.tournament_id !== t.id)
 			return null;
 
@@ -761,54 +1022,88 @@ export class GameService {
 		t.turn_idx = (t.turn_idx + 1) % t.players.length;
 		t.fail_count = 0;
 		t.turn_started_at = nextTurnStartedAt(t.turn_started_at);
-		updateTournament(this.db, t);
+		await updateTournament(this.db, t);
+		log.warn("Tournament turn expired", {
+			chatId: t.chat_id,
+			tournamentId: t.id,
+			expiredUserId: expiredPlayer.userId,
+			round: t.current_round,
+			turnStartedAt,
+		});
 
-		const updated = getTournament(this.db, t.id)!;
+		const updated = (await getTournament(this.db, t.id))!;
 		const nextPlayer = roundOrder(updated.players, updated.current_round)[
 			updated.turn_idx % updated.players.length
 		];
 		return { t: updated, expiredPlayer, nextPlayer };
 	}
 
-	private newTournamentGame(t: TournamentRow): GameRow {
-		const s = getSettings(this.db, t.chat_id);
+	private async newTournamentGame(t: TournamentRow): Promise<GameRow> {
+		const s = await getSettings(this.db, t.chat_id);
 		const answer = pickAnswer(
 			s.language,
 			s.wordLength,
-			recentWords(this.db, t.chat_id, s.creativity),
+			await recentWords(this.db, t.chat_id, s.creativity),
 		);
-		return createGame(this.db, t.chat_id, answer, s.language, "tournament", {
+		const game = await createGame(
+			this.db,
+			t.chat_id,
+			answer,
+			s.language,
+			"tournament",
+			{
+				tournamentId: t.id,
+			},
+		);
+		log.debug("Created tournament game", {
+			chatId: t.chat_id,
 			tournamentId: t.id,
+			gameId: game.id,
+			round: t.current_round,
+			language: game.language,
+			wordLength: game.answer.length,
 		});
+		return game;
 	}
 
 	private async dailyAnswer(
 		date: string,
 		language: WordLanguage,
 	): Promise<string> {
-		const existing = getDailyWord(this.db, date, language);
-		if (existing) return existing.word;
+		const existing = await getDailyWord(this.db, date, language);
+		if (existing) {
+			log.debug("Daily answer cache hit", { date, language });
+			return existing.word;
+		}
 
 		const answer =
 			language === "en"
 				? await fetchNytWordleAnswer(date, this.fetchImpl)
 				: pickAnswer("ru", DEFAULT_WORD_LENGTH);
 
-		saveDailyWord(this.db, date, language, answer);
-		return getDailyWord(this.db, date, language)?.word ?? answer;
+		await saveDailyWord(this.db, date, language, answer);
+		log.debug("Saved daily answer", { date, language });
+		return (await getDailyWord(this.db, date, language))?.word ?? answer;
 	}
 
-	private recordTournamentRejectedAttempt(
+	private async recordTournamentRejectedAttempt(
 		t: TournamentRow,
 		currentPlayer: TournamentPlayer,
 		settings: ChatSettings,
-	): TournamentRejectStatus | undefined {
+	): Promise<TournamentRejectStatus | undefined> {
 		const limit = settings.tournamentMaxFails;
 		if (limit === null) return undefined;
 
 		t.fail_count += 1;
 		if (t.fail_count < limit) {
-			updateTournament(this.db, t);
+			await updateTournament(this.db, t);
+			log.debug("Recorded tournament rejected guess", {
+				chatId: t.chat_id,
+				tournamentId: t.id,
+				userId: currentPlayer.userId,
+				failCount: t.fail_count,
+				limit,
+			});
 			return {
 				forfeitedPlayer: currentPlayer,
 				failCount: t.fail_count,
@@ -821,8 +1116,16 @@ export class GameService {
 		t.turn_idx = (t.turn_idx + 1) % t.players.length;
 		t.fail_count = 0;
 		t.turn_started_at = nextTurnStartedAt(t.turn_started_at);
-		updateTournament(this.db, t);
+		await updateTournament(this.db, t);
 		const nextPlayer = roundOrder(t.players, t.current_round)[t.turn_idx];
+		log.warn("Tournament player forfeited turn after rejected guesses", {
+			chatId: t.chat_id,
+			tournamentId: t.id,
+			userId: currentPlayer.userId,
+			failCount,
+			limit,
+			nextUserId: nextPlayer.userId,
+		});
 		return {
 			forfeitedPlayer: currentPlayer,
 			failCount,
@@ -832,13 +1135,15 @@ export class GameService {
 		};
 	}
 
-	private advanceTournament(
+	private async advanceTournament(
 		t: TournamentRow,
 		user: UserRef,
 		solved: boolean,
 		lost: boolean,
 		guessNumber: number,
-	): NonNullable<Extract<GuessOutcome, { type: "accepted" }>["tournament"]> {
+	): Promise<
+		NonNullable<Extract<GuessOutcome, { type: "accepted" }>["tournament"]>
+	> {
 		let pointsAwarded = 0;
 		const roundEnded = solved || lost;
 		let tournamentEnded = false;
@@ -852,6 +1157,13 @@ export class GameService {
 			pointsAwarded = pointsForGuessNumber(guessNumber);
 			t.scores[String(user.id)] =
 				(t.scores[String(user.id)] ?? 0) + pointsAwarded;
+			log.debug("Awarded tournament points", {
+				chatId: t.chat_id,
+				tournamentId: t.id,
+				userId: user.id,
+				pointsAwarded,
+				guessNumber,
+			});
 		}
 
 		if (roundEnded) {
@@ -859,21 +1171,39 @@ export class GameService {
 				t.status = "done";
 				tournamentEnded = true;
 				winners = this.tournamentWinners(t);
-				updateTournament(this.db, t);
-				this.applyTournamentStats(t, winners);
+				await updateTournament(this.db, t);
+				await this.applyTournamentStats(t, winners);
+				log.debug("Tournament finished", {
+					chatId: t.chat_id,
+					tournamentId: t.id,
+					winnerIds: winners.map((winner) => winner.userId),
+				});
 			} else {
 				t.current_round += 1;
 				t.turn_idx = 0;
 				t.turn_started_at = nextTurnStartedAt(t.turn_started_at);
-				updateTournament(this.db, t);
-				nextGame = this.newTournamentGame(t);
+				await updateTournament(this.db, t);
+				nextGame = await this.newTournamentGame(t);
 				nextPlayer = roundOrder(t.players, t.current_round)[0];
+				log.debug("Advanced tournament round", {
+					chatId: t.chat_id,
+					tournamentId: t.id,
+					round: t.current_round,
+					nextUserId: nextPlayer.userId,
+					nextGameId: nextGame.id,
+				});
 			}
 		} else {
 			t.turn_idx = (t.turn_idx + 1) % t.players.length;
 			t.turn_started_at = nextTurnStartedAt(t.turn_started_at);
-			updateTournament(this.db, t);
+			await updateTournament(this.db, t);
 			nextPlayer = roundOrder(t.players, t.current_round)[t.turn_idx];
+			log.debug("Advanced tournament turn", {
+				chatId: t.chat_id,
+				tournamentId: t.id,
+				round: t.current_round,
+				nextUserId: nextPlayer.userId,
+			});
 		}
 		return {
 			t,
@@ -893,12 +1223,12 @@ export class GameService {
 		return t.players.filter((p) => (t.scores[String(p.userId)] ?? 0) === max);
 	}
 
-	private applyTournamentStats(
+	private async applyTournamentStats(
 		t: TournamentRow,
 		winners: TournamentPlayer[],
-	): void {
+	): Promise<void> {
 		for (const p of t.players) {
-			bumpStats(this.db, t.chat_id, p.userId, p.userName, {
+			await bumpStats(this.db, t.chat_id, p.userId, p.userName, {
 				tournaments_played: 1,
 				tournaments_won: winners.some((w) => w.userId === p.userId) ? 1 : 0,
 				tournament_points: t.scores[String(p.userId)] ?? 0,
@@ -909,27 +1239,35 @@ export class GameService {
 	// ---------- duels ----------
 
 	/** Create a duel; challenger plays in their private chat once they press Play. */
-	createDuel(
+	async createDuel(
 		chatId: number,
 		challenger: UserRef,
 		messageThreadId: number | null = null,
-	): DuelRow {
-		const s = getSettings(this.db, chatId);
+	): Promise<DuelRow> {
+		const s = await getSettings(this.db, chatId);
 		const answer = pickAnswer(
 			s.language,
 			s.wordLength,
-			recentWords(this.db, chatId, s.creativity),
+			await recentWords(this.db, chatId, s.creativity),
 		);
-		return createDuel(this.db, chatId, messageThreadId, answer, {
+		const duel = await createDuel(this.db, chatId, messageThreadId, answer, {
 			userId: challenger.id,
 			userName: challenger.name,
 			guesses: null,
 			solved: false,
 			ms: null,
 		});
+		log.debug("Created duel", {
+			chatId,
+			duelId: duel.id,
+			challengerId: challenger.id,
+			language: s.language,
+			wordLength: s.wordLength,
+		});
+		return duel;
 	}
 
-	getDuel(id: number): DuelRow | null {
+	getDuel(id: number): Promise<DuelRow | null> {
 		return getDuel(this.db, id);
 	}
 
@@ -937,28 +1275,62 @@ export class GameService {
 	 * A player opens the duel deep link in their private chat: create their private game.
 	 * Returns the game, or a string describing why not.
 	 */
-	acceptDuel(
+	async acceptDuel(
 		duelId: number,
 		privateChatId: number,
 		user: UserRef,
-	):
+	): Promise<
 		| { d: DuelRow; game: GameRow }
 		| "not_found"
 		| "full"
 		| "already_playing"
-		| "own_game_running" {
-		const d = getDuel(this.db, duelId);
-		if (!d || d.status === "cancelled" || d.status === "done")
+		| "own_game_running"
+	> {
+		const d = await getDuel(this.db, duelId);
+		if (!d || d.status === "cancelled" || d.status === "done") {
+			log.debug("Accept duel rejected as not found or closed", {
+				duelId,
+				privateChatId,
+				userId: user.id,
+			});
 			return "not_found";
+		}
 		const isChallenger = d.challenger.userId === user.id;
-		if (!isChallenger && d.opponent && d.opponent.userId !== user.id)
+		if (!isChallenger && d.opponent && d.opponent.userId !== user.id) {
+			log.debug("Accept duel rejected as full", {
+				duelId,
+				privateChatId,
+				userId: user.id,
+			});
 			return "full";
-		if (getActiveGame(this.db, privateChatId)) return "own_game_running";
+		}
+		if (await getActiveGame(this.db, privateChatId)) {
+			log.debug("Accept duel rejected by active private game", {
+				duelId,
+				privateChatId,
+				userId: user.id,
+			});
+			return "own_game_running";
+		}
 
 		if (isChallenger) {
-			if (d.challenger.guesses !== null) return "already_playing";
+			if (d.challenger.guesses !== null) {
+				log.debug("Accept duel rejected as already playing", {
+					duelId,
+					privateChatId,
+					userId: user.id,
+				});
+				return "already_playing";
+			}
 		} else if (d.opponent) {
-			if (d.opponent.guesses !== null) return "already_playing";
+			if (d.opponent.guesses !== null) {
+				log.debug("Accept duel rejected as already playing", {
+					duelId,
+					privateChatId,
+					userId: user.id,
+				});
+				return "already_playing";
+			}
 		} else {
 			d.opponent = {
 				userId: user.id,
@@ -968,10 +1340,15 @@ export class GameService {
 				ms: null,
 			};
 			d.status = "active";
-			updateDuel(this.db, d);
+			await updateDuel(this.db, d);
+			log.debug("Duel opponent accepted", {
+				duelId,
+				chatId: d.chat_id,
+				userId: user.id,
+			});
 		}
 		const language = isValidWord(d.answer, "ru", d.answer.length) ? "ru" : "en";
-		const game = createGame(
+		const game = await createGame(
 			this.db,
 			privateChatId,
 			d.answer,
@@ -979,17 +1356,25 @@ export class GameService {
 			"duel",
 			{ duelId: d.id },
 		);
-		return { d: getDuel(this.db, duelId)!, game };
+		log.debug("Created duel private game", {
+			duelId,
+			chatId: d.chat_id,
+			privateChatId,
+			gameId: game.id,
+			userId: user.id,
+			isChallenger,
+		});
+		return { d: (await getDuel(this.db, duelId))!, game };
 	}
 
-	private applyDuelProgress(
+	private async applyDuelProgress(
 		game: GameRow,
 		user: UserRef,
 		solved: boolean,
 		lost: boolean,
 		guessNumber: number,
-	): { d: DuelRow; finished: boolean; bothDone: boolean } {
-		const d = getDuel(this.db, game.duel_id!)!;
+	): Promise<{ d: DuelRow; finished: boolean; bothDone: boolean }> {
+		const d = (await getDuel(this.db, game.duel_id!))!;
 		const finished = solved || lost;
 		if (finished) {
 			const result: DuelPlayerResult = {
@@ -1007,9 +1392,22 @@ export class GameService {
 				d.opponent.guesses !== null;
 			if (bothDone) {
 				d.status = "done";
-				this.applyDuelStats(d);
+				await this.applyDuelStats(d);
+				log.debug("Duel finished", {
+					chatId: d.chat_id,
+					duelId: d.id,
+				});
 			}
-			updateDuel(this.db, d);
+			await updateDuel(this.db, d);
+			log.debug("Recorded duel player result", {
+				chatId: d.chat_id,
+				duelId: d.id,
+				userId: user.id,
+				solved,
+				lost,
+				guessNumber,
+				bothDone,
+			});
 			return { d, finished, bothDone };
 		}
 		return { d, finished: false, bothDone: false };
@@ -1033,10 +1431,10 @@ export class GameService {
 		return "draw";
 	}
 
-	private applyDuelStats(d: DuelRow): void {
+	private async applyDuelStats(d: DuelRow): Promise<void> {
 		const winner = this.duelWinner(d);
 		for (const p of [d.challenger, d.opponent!]) {
-			bumpStats(this.db, d.chat_id, p.userId, p.userName, {
+			await bumpStats(this.db, d.chat_id, p.userId, p.userName, {
 				duels_played: 1,
 				duels_won: winner !== "draw" && winner?.userId === p.userId ? 1 : 0,
 			});
@@ -1045,13 +1443,13 @@ export class GameService {
 
 	// ---------- stats ----------
 
-	private applyGuessStats(
+	private async applyGuessStats(
 		chatId: number,
 		user: UserRef,
 		score: TileStatus[],
 		quality: GuessQuality,
-	): void {
-		bumpStats(this.db, chatId, user.id, user.name, {
+	): Promise<void> {
+		await bumpStats(this.db, chatId, user.id, user.name, {
 			guesses_total: 1,
 			guess_quality_count: quality.possibleCount > 0 ? 1 : 0,
 			guess_expected_remaining_sum: quality.actualRemaining,
@@ -1061,19 +1459,19 @@ export class GameService {
 		});
 	}
 
-	private applyGameEndStats(
+	private async applyGameEndStats(
 		chatId: number,
 		game: GameRow,
 		solved: boolean,
 		guessNumber: number,
-	): void {
+	): Promise<void> {
 		const participants = new Map<number, string>();
 		for (const g of game.guesses) participants.set(g.userId, g.userName);
 		const solver = solved ? game.guesses[game.guesses.length - 1] : null;
 
 		for (const [userId, name] of participants) {
-			const prev = this.statsFor(chatId, userId).current_streak;
-			bumpStats(
+			const prev = (await this.statsFor(chatId, userId)).current_streak;
+			await bumpStats(
 				this.db,
 				chatId,
 				userId,
@@ -1084,7 +1482,7 @@ export class GameService {
 		}
 		if (solver) {
 			const distKey = `dist${guessNumber}` as "dist1";
-			bumpStats(
+			await bumpStats(
 				this.db,
 				chatId,
 				solver.userId,

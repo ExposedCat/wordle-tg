@@ -23,6 +23,7 @@ import {
 	type UserRef,
 } from "../game/service.ts";
 import { describeWordMeaning, hasOpenAIKey, roastBadGuess } from "../llm.ts";
+import { createLogger } from "../log.ts";
 import {
 	emojiPackFromStickers,
 	escapeHtml,
@@ -55,6 +56,8 @@ import {
 	statsText,
 	wordleHelpText,
 } from "./format.ts";
+
+const log = createLogger("bot");
 
 const PEOPLE_EMOJI = '<tg-emoji emoji-id="5942877472163892475">👥</tg-emoji>';
 const JOIN_EMOJI_ID = "5920090136627908485";
@@ -246,7 +249,7 @@ async function wordMeaning(word: string): Promise<string | undefined> {
 	try {
 		return await describeWordMeaning(word);
 	} catch (error) {
-		console.error("Failed to generate word meaning", error);
+		log.error("Failed to generate word meaning", { error });
 		return undefined;
 	}
 }
@@ -301,7 +304,7 @@ function lobbyKeyboard(t: TournamentRow): StyledInlineKeyboard {
 	};
 }
 
-export function registerHandlers(bot: Bot, db: Database): void {
+export async function registerHandlers(bot: Bot, db: Database): Promise<void> {
 	const svc = new GameService(db);
 	const scheduledTimerEvents = new Set<string>();
 
@@ -372,28 +375,28 @@ export function registerHandlers(bot: Bot, db: Database): void {
 				parse_mode: "HTML",
 			})
 			.catch((error) => {
-				console.error("Failed to send tournament timer message", {
+				log.error("Failed to send tournament timer message", {
 					error,
 					tournamentId: t.id,
 				});
 			});
 	}
 
-	function liveTimedTournament(
+	async function liveTimedTournament(
 		tournamentId: number,
 		turnStartedAt: number,
 		timerSeconds: number,
-	): TournamentRow | null {
-		const t = svc.getTournament(tournamentId);
+	): Promise<TournamentRow | null> {
+		const t = await svc.getTournament(tournamentId);
 		if (!t || t.status !== "active" || t.turn_started_at !== turnStartedAt)
 			return null;
-		if (svc.settings(t.chat_id).tournamentTurnSeconds !== timerSeconds)
+		if ((await svc.settings(t.chat_id)).tournamentTurnSeconds !== timerSeconds)
 			return null;
 		return t;
 	}
 
-	function scheduleTournamentTimers(t: TournamentRow): void {
-		const timerSeconds = svc.settings(t.chat_id).tournamentTurnSeconds;
+	async function scheduleTournamentTimers(t: TournamentRow): Promise<void> {
+		const timerSeconds = (await svc.settings(t.chat_id)).tournamentTurnSeconds;
 		if (
 			timerSeconds === null ||
 			t.status !== "active" ||
@@ -418,9 +421,9 @@ export function registerHandlers(bot: Bot, db: Database): void {
 			scheduledTimerEvents.add(key);
 
 			setTimeout(
-				() => {
+				async () => {
 					scheduledTimerEvents.delete(key);
-					const live = liveTimedTournament(
+					const live = await liveTimedTournament(
 						t.id,
 						t.turn_started_at!,
 						timerSeconds,
@@ -428,7 +431,10 @@ export function registerHandlers(bot: Bot, db: Database): void {
 					if (!live) return;
 
 					if (event.label === "expire") {
-						const expired = svc.expireTournamentTurn(t.id, t.turn_started_at!);
+						const expired = await svc.expireTournamentTurn(
+							t.id,
+							t.turn_started_at!,
+						);
 						if (!expired) return;
 						void sendTournamentTimerMessage(
 							expired.t,
@@ -437,7 +443,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 								expired.nextPlayer,
 							),
 						);
-						scheduleTournamentTimers(expired.t);
+						await scheduleTournamentTimers(expired.t);
 						return;
 					}
 
@@ -459,7 +465,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 	}
 
 	function scheduleRejectedTurnForfeit(status?: TournamentRejectStatus): void {
-		if (status?.forfeit) scheduleTournamentTimers(status.forfeit.t);
+		if (status?.forfeit) void scheduleTournamentTimers(status.forfeit.t);
 	}
 
 	async function deleteMessages(
@@ -481,9 +487,9 @@ export function registerHandlers(bot: Bot, db: Database): void {
 	): Promise<void> {
 		const stateChatId = opts.stateChatId ?? chatId;
 		const threadId = messageThreadId(ctx) ?? null;
-		const settings = svc.settings(stateChatId);
+		const settings = await svc.settings(stateChatId);
 		const previousMessageIds = settings.cleanup
-			? svc.boardMessageIds(stateChatId, threadId)
+			? await svc.boardMessageIds(stateChatId, threadId)
 			: [];
 		const sentMessageIds: number[] = [];
 
@@ -513,22 +519,22 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		);
 		if (stateMessageId !== null) sentMessageIds.push(stateMessageId);
 
-		svc.saveBoardMessageIds(
+		await svc.saveBoardMessageIds(
 			stateChatId,
 			threadId,
 			boardMessageIdsForCleanup(game, sentMessageIds),
 		);
 	}
 
-	function activePersonalTarget(
+	async function activePersonalTarget(
 		ctx: Context,
-	): { chatId: number; game: GameRow } | null {
+	): Promise<{ chatId: number; game: GameRow } | null> {
 		if (!ctx.chat || !ctx.from) return null;
 		return svc.activePersonalGame(ctx.chat.id, ctx.from.id);
 	}
 
-	function guessStateChatId(ctx: Context): number {
-		return activePersonalTarget(ctx)?.chatId ?? ctx.chat!.id;
+	async function guessStateChatId(ctx: Context): Promise<number> {
+		return (await activePersonalTarget(ctx))?.chatId ?? ctx.chat!.id;
 	}
 
 	function personalHeaderHtml(user: UserRef): string {
@@ -541,12 +547,12 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		opts: { silentNoGame?: boolean; stateChatId?: number } = {},
 	): Promise<void> {
 		const chatId = ctx.chat!.id;
-		const stateChatId = opts.stateChatId ?? guessStateChatId(ctx);
+		const stateChatId = opts.stateChatId ?? (await guessStateChatId(ctx));
 		const user = userRef(ctx);
-		const personal = activePersonalTarget(ctx);
+		const personal = await activePersonalTarget(ctx);
 		const headerHtml =
 			personal?.chatId === stateChatId ? personalHeaderHtml(user) : undefined;
-		const out = svc.submitGuess(stateChatId, user, word);
+		const out = await svc.submitGuess(stateChatId, user, word);
 
 		switch (out.type) {
 			case "no_game":
@@ -567,8 +573,8 @@ export function registerHandlers(bot: Bot, db: Database): void {
 				return;
 			case "already_guessed":
 				{
-					const game = svc.activeGame(stateChatId)!;
-					const settings = svc.settings(stateChatId);
+					const game = (await svc.activeGame(stateChatId))!;
+					const settings = await svc.settings(stateChatId);
 					await ctx.reply(
 						alreadyGuessedText(out.word, game.answer, settings.emojiPack),
 						{ parse_mode: "HTML" },
@@ -584,7 +590,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 				return;
 			case "hard_mode_violation":
 				await ctx.reply(
-					`${hardModeViolationText(out.violation, out.superHard, svc.settings(stateChatId).emojiPack)}${tournamentRejectStatusHtml(out.rejectStatus)}`,
+					`${hardModeViolationText(out.violation, out.superHard, (await svc.settings(stateChatId)).emojiPack)}${tournamentRejectStatusHtml(out.rejectStatus)}`,
 					{
 						parse_mode: "HTML",
 					},
@@ -608,10 +614,10 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		const lines: string[] = [];
 
 		async function maybeRoastGuess(): Promise<void> {
-			const roastEnabled = svc.settings(chatId).roast;
+			const roastEnabled = (await svc.settings(chatId)).roast;
 			const belowAverage = isBelowAverageQuality(quality);
 			const logSkip = (reason: string) =>
-				console.debug("[guess-roast]", {
+				log.debug("Guess roast skipped", {
 					reason,
 					chatId: stateChatId,
 					userId: user.id,
@@ -649,7 +655,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 						: undefined,
 				);
 			} catch (error) {
-				console.error("Failed to generate guess roast", {
+				log.error("Failed to generate guess roast", {
 					error,
 					chatId: stateChatId,
 					userId: user.id,
@@ -713,9 +719,9 @@ export function registerHandlers(bot: Bot, db: Database): void {
 					footerHtml: tournamentStatusHtml(t),
 					stateChatId,
 				});
-				scheduleTournamentTimers(t);
+				await scheduleTournamentTimers(t);
 			} else {
-				scheduleTournamentTimers(t);
+				await scheduleTournamentTimers(t);
 			}
 			return;
 		}
@@ -775,9 +781,9 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		difficulty: "normal" | "hard" | "superhard",
 	): Promise<void> {
 		const chatId = ctx.chat!.id;
-		const s = svc.settings(chatId);
+		const s = await svc.settings(chatId);
 		s.difficulty = difficulty;
-		svc.saveSettings(chatId, s);
+		await svc.saveSettings(chatId, s);
 		const labels = {
 			normal: "Normal",
 			hard: '<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji> Hard',
@@ -807,11 +813,11 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		return `${FORBIDDEN} ${text}`;
 	}
 
-	function expectedGuessLength(ctx: Context): number {
-		const stateChatId = guessStateChatId(ctx);
+	async function expectedGuessLength(ctx: Context): Promise<number> {
+		const stateChatId = await guessStateChatId(ctx);
 		return (
-			svc.activeGame(stateChatId)?.answer.length ??
-			svc.settings(ctx.chat!.id).wordLength
+			(await svc.activeGame(stateChatId))?.answer.length ??
+			(await svc.settings(ctx.chat!.id)).wordLength
 		);
 	}
 
@@ -832,8 +838,8 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		language: WordLanguage,
 	): Promise<void> {
 		const chatId = ctx.chat!.id;
-		svc.setLanguage(chatId, language);
-		const active = svc.activeGame(chatId);
+		await svc.setLanguage(chatId, language);
+		const active = await svc.activeGame(chatId);
 		const suffix =
 			active && active.language !== language
 				? `\nCurrent game stays ${LANGUAGE_LABELS[active.language]}.`
@@ -848,12 +854,12 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		const chatId = ctx.chat!.id;
 		const value = String(ctx.match ?? "").trim();
 		const length = parseInt(value, 10);
-		if (!/^\d+$/.test(value) || !svc.setWordLength(chatId, length)) {
+		if (!/^\d+$/.test(value) || !(await svc.setWordLength(chatId, length))) {
 			return void (await ctx.reply(
 				`Usage: /length N, where N is ${MIN_WORD_LENGTH}-${MAX_WORD_LENGTH}`,
 			));
 		}
-		const active = svc.activeGame(chatId);
+		const active = await svc.activeGame(chatId);
 		const suffix =
 			active && active.answer.length !== length
 				? `\nCurrent game stays ${active.answer.length} letters.`
@@ -866,7 +872,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 	// ---------- commands ----------
 
 	async function replyHelp(ctx: Context): Promise<void> {
-		await ctx.reply(helpText(svc.settings(ctx.chat!.id)), {
+		await ctx.reply(helpText(await svc.settings(ctx.chat!.id)), {
 			parse_mode: "HTML",
 			link_preview_options: { is_disabled: true },
 		});
@@ -877,7 +883,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		if (payload.startsWith("duel_")) {
 			const duelId = parseInt(payload.slice(5), 10);
 			if (ctx.chat.type !== "private" || !Number.isFinite(duelId)) return;
-			const res = svc.acceptDuel(duelId, ctx.chat.id, userRef(ctx));
+			const res = await svc.acceptDuel(duelId, ctx.chat.id, userRef(ctx));
 			if (res === "not_found")
 				return void (await ctx.reply(
 					"This duel no longer exists or is already finished.",
@@ -908,19 +914,19 @@ export function registerHandlers(bot: Bot, db: Database): void {
 	bot.command("length", (ctx) => setWordLength(ctx));
 
 	bot.command("auto", async (ctx) => {
-		const s = svc.settings(ctx.chat.id);
+		const s = await svc.settings(ctx.chat.id);
 		s.bareWord = !s.bareWord;
-		svc.saveSettings(ctx.chat.id, s);
-		const text = `Guess without /w ${s.bareWord ? "enabled" : "disabled"}\n${autoGuessInstruction(s.bareWord, expectedGuessLength(ctx))}`;
+		await svc.saveSettings(ctx.chat.id, s);
+		const text = `Guess without /w ${s.bareWord ? "enabled" : "disabled"}\n${autoGuessInstruction(s.bareWord, await expectedGuessLength(ctx))}`;
 		await ctx.reply(s.bareWord ? tickText(text) : forbiddenText(text), {
 			parse_mode: "HTML",
 		});
 	});
 
 	bot.command("cleanup", async (ctx) => {
-		const s = svc.settings(ctx.chat.id);
+		const s = await svc.settings(ctx.chat.id);
 		s.cleanup = !s.cleanup;
-		svc.saveSettings(ctx.chat.id, s);
+		await svc.saveSettings(ctx.chat.id, s);
 		const text = `Cleanup ${s.cleanup ? "enabled" : "disabled"}\nPrevious unsolved boards will ${s.cleanup ? "" : "not "}be removed when a new board is posted`;
 		await ctx.reply(s.cleanup ? tickText(text) : forbiddenText(text), {
 			parse_mode: "HTML",
@@ -928,9 +934,9 @@ export function registerHandlers(bot: Bot, db: Database): void {
 	});
 
 	bot.command("roast", async (ctx) => {
-		const s = svc.settings(ctx.chat.id);
+		const s = await svc.settings(ctx.chat.id);
 		s.roast = !s.roast;
-		svc.saveSettings(ctx.chat.id, s);
+		await svc.saveSettings(ctx.chat.id, s);
 		const text = `Roasts ${s.roast ? "enabled" : "disabled"}\nBelow-average guesses will ${s.roast ? "" : "not "}get one LLM roast`;
 		await ctx.reply(s.roast ? tickText(text) : forbiddenText(text), {
 			parse_mode: "HTML",
@@ -953,9 +959,9 @@ export function registerHandlers(bot: Bot, db: Database): void {
 					));
 				}
 
-				const s = svc.settings(ctx.chat.id);
+				const s = await svc.settings(ctx.chat.id);
 				s.emojiPack = emojiPackFromStickers(packName, stickerSet.stickers);
-				svc.saveSettings(ctx.chat.id, s);
+				await svc.saveSettings(ctx.chat.id, s);
 				await ctx.reply(
 					`${tickText("Custom emoji pack enabled")}\nPack: https://t.me/addemoji/${packName}`,
 					{
@@ -975,17 +981,17 @@ export function registerHandlers(bot: Bot, db: Database): void {
 
 	bot.command("wordle", async (ctx) => {
 		const chatId = ctx.chat.id;
-		const t = svc.openTournament(chatId);
+		const t = await svc.openTournament(chatId);
 		if (t)
 			return void (await ctx.reply(
 				"A tournament is open in this chat — finish it with /stop first.",
 			));
-		const game = svc.startGame(chatId);
+		const game = await svc.startGame(chatId);
 		if (!game)
 			return void (await ctx.reply(
 				"A game is already running! Check /board or /stop to abandon it.",
 			));
-		const s = svc.settings(chatId);
+		const s = await svc.settings(chatId);
 		await sendBoard(
 			ctx,
 			chatId,
@@ -997,7 +1003,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 	bot.command("personal", async (ctx) => {
 		const chatId = ctx.chat.id;
 		const user = userRef(ctx);
-		const started = svc.startPersonalGame(chatId, user.id);
+		const started = await svc.startPersonalGame(chatId, user.id);
 		if (!started)
 			return void (await ctx.reply(
 				"You already have a personal game running! Check /board or /stop to abandon it.",
@@ -1016,7 +1022,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 
 	bot.command("daily", async (ctx) => {
 		const chatId = ctx.chat.id;
-		const t = svc.openTournament(chatId);
+		const t = await svc.openTournament(chatId);
 		if (t)
 			return void (await ctx.reply(
 				"A tournament is open in this chat — finish it with /stop first.",
@@ -1025,7 +1031,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		try {
 			started = await svc.startDailyGame(chatId);
 		} catch (error) {
-			console.error("Failed to start daily wordle", { error, chatId });
+			log.error("Failed to start daily wordle", { error, chatId });
 			return void (await ctx.reply(
 				"Could not fetch today's Wordle. Try again in a bit.",
 			));
@@ -1044,7 +1050,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 			));
 		}
 		const game = started.game;
-		const s = svc.settings(chatId);
+		const s = await svc.settings(chatId);
 		await sendBoard(
 			ctx,
 			chatId,
@@ -1063,24 +1069,27 @@ export function registerHandlers(bot: Bot, db: Database): void {
 					"Usage: /oneshot [easy|normal|hard|expert]",
 				));
 			}
-			const s = svc.setOneshotDifficulty(chatId, arg as OneshotDifficulty);
+			const s = await svc.setOneshotDifficulty(
+				chatId,
+				arg as OneshotDifficulty,
+			);
 			return void (await ctx.reply(
 				tickText(`One-shot difficulty set to ${s.oneshotDifficulty}`),
 				{ parse_mode: "HTML" },
 			));
 		}
 
-		const t = svc.openTournament(chatId);
+		const t = await svc.openTournament(chatId);
 		if (t)
 			return void (await ctx.reply(
 				"A tournament is open in this chat — finish it with /stop first.",
 			));
-		if (svc.activeGame(chatId))
+		if (await svc.activeGame(chatId))
 			return void (await ctx.reply(
 				"A game is already running! Check /board or /stop to abandon it.",
 			));
 
-		const puzzle = svc.startOneshot(chatId);
+		const puzzle = await svc.startOneshot(chatId);
 		if (!puzzle)
 			return void (await ctx.reply(
 				"Could not find a one-shot puzzle for the current settings. Try another length or mode.",
@@ -1099,7 +1108,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 
 	bot.command("w", async (ctx) => {
 		const word = (ctx.match ?? "").trim();
-		const length = expectedGuessLength(ctx);
+		const length = await expectedGuessLength(ctx);
 		if (!isGuessText(word, length)) {
 			return void (await ctx.reply(`Usage: /w WORD (a ${length}-letter word)`));
 		}
@@ -1108,10 +1117,10 @@ export function registerHandlers(bot: Bot, db: Database): void {
 
 	bot.command("board", async (ctx) => {
 		const chatId = ctx.chat.id;
-		const personal = activePersonalTarget(ctx);
+		const personal = await activePersonalTarget(ctx);
 		const stateChatId = personal?.chatId ?? chatId;
-		const game = personal?.game ?? svc.activeGame(chatId);
-		const t = personal ? null : svc.openTournament(chatId);
+		const game = personal?.game ?? (await svc.activeGame(chatId));
+		const t = personal ? null : await svc.openTournament(chatId);
 		if (!game) {
 			if (t && t.status === "joining")
 				return void (await ctx.reply(lobbyText(t), {
@@ -1136,8 +1145,8 @@ export function registerHandlers(bot: Bot, db: Database): void {
 	});
 
 	bot.command("stop", async (ctx) => {
-		const personal = activePersonalTarget(ctx);
-		const res = svc.giveUp(personal?.chatId ?? ctx.chat.id);
+		const personal = await activePersonalTarget(ctx);
+		const res = await svc.giveUp(personal?.chatId ?? ctx.chat.id);
 		if (!res)
 			return void (await ctx.reply(
 				`${NO_ACTIVE} No active game or tournament to give up.`,
@@ -1154,7 +1163,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 
 	bot.command("profile", async (ctx) => {
 		const user = userRef(ctx);
-		const row = svc.statsFor(ctx.chat.id, user.id);
+		const row = await svc.statsFor(ctx.chat.id, user.id);
 		await ctx.reply(statsText(row, user.name, chatDisplayName(ctx)), {
 			parse_mode: "HTML",
 		});
@@ -1169,17 +1178,17 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		let target: {
 			userId: number;
 			name: string;
-			stats: ReturnType<GameService["statsFor"]>;
+			stats: Awaited<ReturnType<GameService["statsFor"]>>;
 		} | null = null;
 
 		if (!arg && repliedUser) {
 			target = {
 				userId: repliedUser.id,
 				name: telegramUserDisplayName(repliedUser),
-				stats: svc.statsFor(chatId, repliedUser.id),
+				stats: await svc.statsFor(chatId, repliedUser.id),
 			};
 		} else if (arg) {
-			const row = svc.findStatsByName(chatId, arg);
+			const row = await svc.findStatsByName(chatId, arg);
 			if (!row) {
 				return void (await ctx.reply(
 					"I do not know that player yet. Reply to one of their messages, or use the name they played under.",
@@ -1211,7 +1220,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 				await renderCompareSticker(
 					{
 						name: user.name,
-						stats: svc.statsFor(chatId, user.id),
+						stats: await svc.statsFor(chatId, user.id),
 						avatar: userPhoto,
 					},
 					{ name: target.name, stats: target.stats, avatar: targetPhoto },
@@ -1224,7 +1233,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 
 	bot.command("global", async (ctx) => {
 		const user = userRef(ctx);
-		const row = svc.globalStatsFor(user.id);
+		const row = await svc.globalStatsFor(user.id);
 		await ctx.reply(statsText(row, user.name, "All chats"), {
 			parse_mode: "HTML",
 		});
@@ -1233,12 +1242,12 @@ export function registerHandlers(bot: Bot, db: Database): void {
 	bot.command("creativity", async (ctx) => {
 		const chatId = ctx.chat.id;
 		const arg = (ctx.match ?? "").trim();
-		const s = svc.settings(chatId);
+		const s = await svc.settings(chatId);
 
 		if (!arg) {
 			if (s.creativity.enabled) {
 				s.creativity.enabled = false;
-				svc.saveSettings(chatId, s);
+				await svc.saveSettings(chatId, s);
 				return void (await ctx.reply(
 					forbiddenText("Creativity mode disabled"),
 					{
@@ -1254,7 +1263,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 			}
 
 			s.creativity.enabled = true;
-			svc.saveSettings(chatId, s);
+			await svc.saveSettings(chatId, s);
 			return void (await ctx.reply(creativityEnabledText(s), {
 				parse_mode: "HTML",
 			}));
@@ -1276,7 +1285,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 			s.creativity.mode = "count";
 			s.creativity.count = parsed.count;
 		}
-		svc.saveSettings(chatId, s);
+		await svc.saveSettings(chatId, s);
 
 		await ctx.reply(creativityEnabledText(s), { parse_mode: "HTML" });
 	});
@@ -1288,20 +1297,22 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		ctx.reply(wordleHelpText(), { parse_mode: "HTML" }),
 	);
 	bot.command("oneshot_help", async (ctx) =>
-		ctx.reply(oneshotHelpText(svc.settings(ctx.chat.id)), {
+		ctx.reply(oneshotHelpText(await svc.settings(ctx.chat.id)), {
 			parse_mode: "HTML",
 		}),
 	);
 	bot.command("mode_help", async (ctx) =>
-		ctx.reply(modeHelpText(svc.settings(ctx.chat.id)), { parse_mode: "HTML" }),
+		ctx.reply(modeHelpText(await svc.settings(ctx.chat.id)), {
+			parse_mode: "HTML",
+		}),
 	);
 	bot.command("creativity_help", async (ctx) =>
-		ctx.reply(creativityHelpText(svc.settings(ctx.chat.id)), {
+		ctx.reply(creativityHelpText(await svc.settings(ctx.chat.id)), {
 			parse_mode: "HTML",
 		}),
 	);
 	bot.command("multiplayer_help", async (ctx) =>
-		ctx.reply(multiplayerHelpText(svc.settings(ctx.chat.id)), {
+		ctx.reply(multiplayerHelpText(await svc.settings(ctx.chat.id)), {
 			parse_mode: "HTML",
 		}),
 	);
@@ -1309,7 +1320,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		ctx.reply(statsHelpText(), { parse_mode: "HTML" }),
 	);
 	bot.command("preferences_help", async (ctx) =>
-		ctx.reply(preferencesHelpText(svc.settings(ctx.chat.id)), {
+		ctx.reply(preferencesHelpText(await svc.settings(ctx.chat.id)), {
 			parse_mode: "HTML",
 		}),
 	);
@@ -1321,7 +1332,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 			return void (await ctx.reply("Usage: /fails N  |  /fails off"));
 		}
 
-		const s = svc.settings(chatId);
+		const s = await svc.settings(chatId);
 		if (value === "off" || value === "unlimited") {
 			s.tournamentMaxFails = null;
 		} else {
@@ -1333,7 +1344,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 			}
 			s.tournamentMaxFails = n;
 		}
-		svc.saveSettings(chatId, s);
+		await svc.saveSettings(chatId, s);
 		const label =
 			s.tournamentMaxFails === null
 				? "off (unlimited)"
@@ -1346,11 +1357,11 @@ export function registerHandlers(bot: Bot, db: Database): void {
 	bot.command("timer", async (ctx) => {
 		const chatId = ctx.chat.id;
 		const value = (ctx.match ?? "").trim();
-		const s = svc.settings(chatId);
+		const s = await svc.settings(chatId);
 
 		if (!value) {
 			s.tournamentTurnSeconds = null;
-			svc.saveSettings(chatId, s);
+			await svc.saveSettings(chatId, s);
 			return void (await ctx.reply(
 				forbiddenText("Tournament turn timer disabled"),
 				{ parse_mode: "HTML" },
@@ -1365,9 +1376,9 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		}
 
 		s.tournamentTurnSeconds = seconds;
-		svc.saveSettings(chatId, s);
-		const activeTournament = svc.resetActiveTournamentTurnTimer(chatId);
-		if (activeTournament) scheduleTournamentTimers(activeTournament);
+		await svc.saveSettings(chatId, s);
+		const activeTournament = await svc.resetActiveTournamentTurnTimer(chatId);
+		if (activeTournament) await scheduleTournamentTimers(activeTournament);
 		await ctx.reply(
 			tickText(`Tournament turn timer set to ${humanTurnTime(seconds)}`),
 			{ parse_mode: "HTML" },
@@ -1381,7 +1392,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 			return void (await ctx.reply(
 				"Usage: /round [N]. Use /stop to end an open tournament.",
 			));
-		const existing = svc.openTournament(chatId);
+		const existing = await svc.openTournament(chatId);
 		if (existing) {
 			if (existing.status === "joining")
 				return void (await ctx.reply(lobbyText(existing), {
@@ -1397,11 +1408,11 @@ export function registerHandlers(bot: Bot, db: Database): void {
 			Number.isFinite(parsedRounds) && parsedRounds >= 1 && parsedRounds <= 25
 				? parsedRounds
 				: 0;
-		if (svc.activeGame(chatId))
+		if (await svc.activeGame(chatId))
 			return void (await ctx.reply(
 				"Finish the current game first (/stop to abandon it).",
 			));
-		const t = svc.createTournament(
+		const t = await svc.createTournament(
 			chatId,
 			rounds,
 			userRef(ctx),
@@ -1422,7 +1433,11 @@ export function registerHandlers(bot: Bot, db: Database): void {
 			));
 		}
 		const user = userRef(ctx);
-		const d = svc.createDuel(ctx.chat.id, user, messageThreadId(ctx) ?? null);
+		const d = await svc.createDuel(
+			ctx.chat.id,
+			user,
+			messageThreadId(ctx) ?? null,
+		);
 		const link = `https://t.me/${ctx.me.username}?start=duel_${d.id}`;
 		await ctx.reply(
 			`⚔️ ${user.name} challenges the chat to a duel!\n\nSame secret word for both players, ${MAX_GUESSES} tries each in a private chat with me. Fewest guesses wins; speed breaks ties.\n\nFirst person to tap becomes the opponent. ${user.name}, tap too to play your board!`,
@@ -1433,7 +1448,10 @@ export function registerHandlers(bot: Bot, db: Database): void {
 	// ---------- callbacks ----------
 
 	bot.callbackQuery(/^t:join:(\d+)$/, async (ctx) => {
-		const res = svc.joinTournament(parseInt(ctx.match[1], 10), userRef(ctx));
+		const res = await svc.joinTournament(
+			parseInt(ctx.match[1], 10),
+			userRef(ctx),
+		);
 		if (!res || res === "closed")
 			return void (await ctx.answerCallbackQuery(
 				"This tournament is not open for joining.",
@@ -1448,7 +1466,10 @@ export function registerHandlers(bot: Bot, db: Database): void {
 	});
 
 	bot.callbackQuery(/^t:quit:(\d+)$/, async (ctx) => {
-		const res = svc.quitTournament(parseInt(ctx.match[1], 10), ctx.from.id);
+		const res = await svc.quitTournament(
+			parseInt(ctx.match[1], 10),
+			ctx.from.id,
+		);
 		if (!res || res === "closed")
 			return void (await ctx.answerCallbackQuery(
 				"This tournament is not open for joining.",
@@ -1478,7 +1499,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 
 	bot.callbackQuery(/^t:start:(\d+)$/, async (ctx) => {
 		const id = parseInt(ctx.match[1], 10);
-		const t = svc.openTournament(ctx.chat!.id);
+		const t = await svc.openTournament(ctx.chat!.id);
 		if (!t || t.id !== id)
 			return void (await ctx.answerCallbackQuery(
 				"This tournament is no longer open.",
@@ -1487,7 +1508,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 			return void (await ctx.answerCallbackQuery(
 				"Only the creator can start it.",
 			));
-		const res = svc.startTournament(id);
+		const res = await svc.startTournament(id);
 		if (res === "too_few")
 			return void (await ctx.answerCallbackQuery("Need at least 2 players!"));
 		if (!res)
@@ -1502,7 +1523,7 @@ export function registerHandlers(bot: Bot, db: Database): void {
 		await sendBoard(ctx, ctx.chat!.id, res.game, "", {
 			footerHtml: tournamentStatusHtml(res.t),
 		});
-		scheduleTournamentTimers(res.t);
+		await scheduleTournamentTimers(res.t);
 	});
 
 	// ---------- bare-word guessing ----------
@@ -1510,13 +1531,17 @@ export function registerHandlers(bot: Bot, db: Database): void {
 	bot.on("message:text", async (ctx) => {
 		const text = ctx.message.text.trim();
 		if (text.startsWith("/")) return;
-		if (!isGuessText(text, expectedGuessLength(ctx))) return;
-		if (!svc.settings(ctx.chat.id).bareWord) return;
+		if (!isGuessText(text, await expectedGuessLength(ctx))) return;
+		if (!(await svc.settings(ctx.chat.id)).bareWord) return;
 		await handleGuess(ctx, text, {
 			silentNoGame: true,
-			stateChatId: guessStateChatId(ctx),
+			stateChatId: await guessStateChatId(ctx),
 		});
 	});
 
-	for (const t of svc.activeTournaments()) scheduleTournamentTimers(t);
+	const activeTournaments = await svc.activeTournaments();
+	log.debug("Restoring active tournament timers", {
+		count: activeTournaments.length,
+	});
+	for (const t of activeTournaments) void scheduleTournamentTimers(t);
 }

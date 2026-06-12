@@ -1,4 +1,6 @@
 import { Database as SqliteDatabase } from "@db/sqlite";
+import { type ColumnType, Kysely, sql } from "@kysely/kysely";
+import { DenoSqlite3Dialect } from "@marshift/kysely-deno-sqlite3";
 import {
 	DEFAULT_LANGUAGE,
 	DEFAULT_WORD_LENGTH,
@@ -11,7 +13,10 @@ import {
 	isEmojiPackConfig,
 } from "./render/emoji-pack.ts";
 
-export type Database = SqliteDatabase;
+type GeneratedColumn<T> = ColumnType<T, never, never>;
+type DefaultColumn<T> = ColumnType<T, T | undefined, T>;
+
+export type Database = Kysely<DatabaseSchema>;
 
 function normalizeSqlValue(value: unknown): unknown {
 	return typeof value === "bigint" ? Number(value) : value;
@@ -203,184 +208,357 @@ export interface StatsRow {
 	duels_won: number;
 }
 
-export function openDb(path: string): Database {
-	const db = new SqliteDatabase(path, { int64: true, parseJson: false });
-	db.exec("PRAGMA journal_mode = WAL");
-	db.exec(`
-    CREATE TABLE IF NOT EXISTS chats (
-      chat_id INTEGER PRIMARY KEY,
-      settings TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS games (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      chat_id INTEGER NOT NULL,
-      answer TEXT NOT NULL,
-      language TEXT NOT NULL DEFAULT 'en',
-      status TEXT NOT NULL DEFAULT 'active',
-      kind TEXT NOT NULL DEFAULT 'normal',
-      guesses TEXT NOT NULL DEFAULT '[]',
-      started_at INTEGER NOT NULL,
-      finished_at INTEGER,
-      tournament_id INTEGER,
-      duel_id INTEGER,
-      daily_date TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_games_active ON games(chat_id, status);
-    CREATE TABLE IF NOT EXISTS daily_words (
-      date TEXT NOT NULL,
-      language TEXT NOT NULL,
-      word TEXT NOT NULL,
-      fetched_at INTEGER NOT NULL,
-      PRIMARY KEY (date, language)
-    );
-    CREATE TABLE IF NOT EXISTS used_words (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      chat_id INTEGER NOT NULL,
-      word TEXT NOT NULL,
-      used_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_used_words ON used_words(chat_id, used_at);
-    CREATE TABLE IF NOT EXISTS tournaments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      chat_id INTEGER NOT NULL,
-      rounds INTEGER NOT NULL,
-      current_round INTEGER NOT NULL DEFAULT 1,
-      status TEXT NOT NULL DEFAULT 'joining',
-      players TEXT NOT NULL DEFAULT '[]',
-      scores TEXT NOT NULL DEFAULT '{}',
-      turn_idx INTEGER NOT NULL DEFAULT 0,
-      fail_count INTEGER NOT NULL DEFAULT 0,
-      turn_started_at INTEGER,
-      message_thread_id INTEGER,
-      created_by INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS duels (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      chat_id INTEGER NOT NULL,
-      message_thread_id INTEGER,
-      answer TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      challenger TEXT NOT NULL,
-      opponent TEXT
-    );
-    CREATE TABLE IF NOT EXISTS board_messages (
-      chat_id INTEGER NOT NULL,
-      thread_id INTEGER NOT NULL,
-      message_ids TEXT NOT NULL,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (chat_id, thread_id)
-    );
-    CREATE TABLE IF NOT EXISTS personal_scopes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      chat_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      scope_chat_id INTEGER UNIQUE,
-      UNIQUE(chat_id, user_id)
-    );
-    CREATE TABLE IF NOT EXISTS stats (
-      chat_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      name TEXT NOT NULL DEFAULT '',
-      games_played INTEGER NOT NULL DEFAULT 0,
-      games_won INTEGER NOT NULL DEFAULT 0,
-      solves INTEGER NOT NULL DEFAULT 0,
-      guesses_total INTEGER NOT NULL DEFAULT 0,
-      guess_quality_count INTEGER NOT NULL DEFAULT 0,
-      guess_expected_remaining_sum REAL NOT NULL DEFAULT 0,
-      guess_quality_points_sum INTEGER NOT NULL DEFAULT 0,
-      greens INTEGER NOT NULL DEFAULT 0,
-      yellows INTEGER NOT NULL DEFAULT 0,
-      current_streak INTEGER NOT NULL DEFAULT 0,
-      best_streak INTEGER NOT NULL DEFAULT 0,
-      dist1 INTEGER NOT NULL DEFAULT 0,
-      dist2 INTEGER NOT NULL DEFAULT 0,
-      dist3 INTEGER NOT NULL DEFAULT 0,
-      dist4 INTEGER NOT NULL DEFAULT 0,
-      dist5 INTEGER NOT NULL DEFAULT 0,
-      dist6 INTEGER NOT NULL DEFAULT 0,
-      fastest_ms INTEGER,
-      tournaments_played INTEGER NOT NULL DEFAULT 0,
-      tournaments_won INTEGER NOT NULL DEFAULT 0,
-      tournament_points INTEGER NOT NULL DEFAULT 0,
-      duels_played INTEGER NOT NULL DEFAULT 0,
-      duels_won INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (chat_id, user_id)
-    );
-  `);
-	const tournamentColumns = db
-		.prepare("PRAGMA table_info(tournaments)")
-		.all<{ name: string }>();
-	if (!tournamentColumns.some((column) => column.name === "fail_count")) {
-		db.prepare(
-			"ALTER TABLE tournaments ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0",
-		).run();
-	}
-	if (!tournamentColumns.some((column) => column.name === "turn_started_at")) {
-		db.prepare(
-			"ALTER TABLE tournaments ADD COLUMN turn_started_at INTEGER",
-		).run();
-	}
-	if (
-		!tournamentColumns.some((column) => column.name === "message_thread_id")
-	) {
-		db.prepare(
-			"ALTER TABLE tournaments ADD COLUMN message_thread_id INTEGER",
-		).run();
-	}
-	const duelColumns = db
-		.prepare("PRAGMA table_info(duels)")
-		.all<{ name: string }>();
-	if (!duelColumns.some((column) => column.name === "message_thread_id")) {
-		db.prepare("ALTER TABLE duels ADD COLUMN message_thread_id INTEGER").run();
-	}
-	const gameColumns = db
-		.prepare("PRAGMA table_info(games)")
-		.all<{ name: string }>();
-	if (!gameColumns.some((column) => column.name === "language")) {
-		db.prepare(
-			"ALTER TABLE games ADD COLUMN language TEXT NOT NULL DEFAULT 'en'",
-		).run();
-	}
-	if (!gameColumns.some((column) => column.name === "daily_date")) {
-		db.prepare("ALTER TABLE games ADD COLUMN daily_date TEXT").run();
-	}
-	db.prepare(
-		"CREATE INDEX IF NOT EXISTS idx_games_daily ON games(chat_id, daily_date, language, kind, status)",
-	).run();
-	const statsColumns = db
-		.prepare("PRAGMA table_info(stats)")
-		.all<{ name: string }>();
-	if (!statsColumns.some((column) => column.name === "guess_quality_count")) {
-		db.prepare(
-			"ALTER TABLE stats ADD COLUMN guess_quality_count INTEGER NOT NULL DEFAULT 0",
-		).run();
-	}
-	if (
-		!statsColumns.some(
-			(column) => column.name === "guess_expected_remaining_sum",
+export type DatabaseSchema = {
+	chats: {
+		chat_id: number;
+		settings: string;
+	};
+	games: {
+		id: GeneratedColumn<number>;
+		chat_id: number;
+		answer: string;
+		language: DefaultColumn<string>;
+		status: DefaultColumn<GameStatus>;
+		kind: DefaultColumn<GameKind>;
+		guesses: DefaultColumn<string>;
+		started_at: number;
+		finished_at: number | null;
+		tournament_id: number | null;
+		duel_id: number | null;
+		daily_date: string | null;
+	};
+	daily_words: {
+		date: string;
+		language: string;
+		word: string;
+		fetched_at: number;
+	};
+	used_words: {
+		id: GeneratedColumn<number>;
+		chat_id: number;
+		word: string;
+		used_at: number;
+	};
+	tournaments: {
+		id: GeneratedColumn<number>;
+		chat_id: number;
+		rounds: number;
+		current_round: DefaultColumn<number>;
+		status: DefaultColumn<TournamentStatus>;
+		players: DefaultColumn<string>;
+		scores: DefaultColumn<string>;
+		turn_idx: DefaultColumn<number>;
+		fail_count: DefaultColumn<number>;
+		turn_started_at: number | null;
+		message_thread_id: number | null;
+		created_by: number;
+	};
+	duels: {
+		id: GeneratedColumn<number>;
+		chat_id: number;
+		message_thread_id: number | null;
+		answer: string;
+		status: DefaultColumn<DuelStatus>;
+		challenger: string;
+		opponent: string | null;
+	};
+	board_messages: {
+		chat_id: number;
+		thread_id: number;
+		message_ids: string;
+		updated_at: number;
+	};
+	personal_scopes: {
+		id: GeneratedColumn<number>;
+		chat_id: number;
+		user_id: number;
+		scope_chat_id: number | null;
+	};
+	stats: StatsRow;
+};
+
+type TableInfoRow = { name: string };
+
+async function hasColumn(
+	database: Database,
+	table: "tournaments" | "duels" | "games" | "stats",
+	columnName: string,
+): Promise<boolean> {
+	const result =
+		await sql<TableInfoRow>`PRAGMA table_info(${sql.raw(table)})`.execute(
+			database,
+		);
+	return result.rows.some((column) => column.name === columnName);
+}
+
+async function addColumnIfMissing(
+	database: Database,
+	table: "tournaments" | "duels" | "games" | "stats",
+	columnName: string,
+	definition: string,
+): Promise<void> {
+	if (await hasColumn(database, table, columnName)) return;
+	await sql`ALTER TABLE ${sql.table(table)} ADD COLUMN ${sql.raw(definition)}`.execute(
+		database,
+	);
+}
+
+async function migrate(database: Database): Promise<void> {
+	await sql`PRAGMA foreign_keys = ON`.execute(database);
+	await sql`PRAGMA journal_mode = WAL`.execute(database);
+
+	await database.schema
+		.createTable("chats")
+		.ifNotExists()
+		.addColumn("chat_id", "integer", (column) => column.primaryKey())
+		.addColumn("settings", "text", (column) => column.notNull())
+		.execute();
+	await database.schema
+		.createTable("games")
+		.ifNotExists()
+		.addColumn("id", "integer", (column) => column.primaryKey().autoIncrement())
+		.addColumn("chat_id", "integer", (column) => column.notNull())
+		.addColumn("answer", "text", (column) => column.notNull())
+		.addColumn("language", "text", (column) => column.notNull().defaultTo("en"))
+		.addColumn("status", "text", (column) =>
+			column.notNull().defaultTo("active"),
 		)
-	) {
-		db.prepare(
-			"ALTER TABLE stats ADD COLUMN guess_expected_remaining_sum REAL NOT NULL DEFAULT 0",
-		).run();
-	}
-	if (
-		!statsColumns.some((column) => column.name === "guess_quality_points_sum")
-	) {
-		db.prepare(
-			"ALTER TABLE stats ADD COLUMN guess_quality_points_sum INTEGER NOT NULL DEFAULT 0",
-		).run();
-	}
-	return db;
+		.addColumn("kind", "text", (column) => column.notNull().defaultTo("normal"))
+		.addColumn("guesses", "text", (column) => column.notNull().defaultTo("[]"))
+		.addColumn("started_at", "integer", (column) => column.notNull())
+		.addColumn("finished_at", "integer")
+		.addColumn("tournament_id", "integer")
+		.addColumn("duel_id", "integer")
+		.addColumn("daily_date", "text")
+		.execute();
+	await database.schema
+		.createIndex("idx_games_active")
+		.ifNotExists()
+		.on("games")
+		.columns(["chat_id", "status"])
+		.execute();
+	await database.schema
+		.createIndex("idx_games_daily")
+		.ifNotExists()
+		.on("games")
+		.columns(["chat_id", "daily_date", "language", "kind", "status"])
+		.execute();
+	await database.schema
+		.createTable("daily_words")
+		.ifNotExists()
+		.addColumn("date", "text", (column) => column.notNull())
+		.addColumn("language", "text", (column) => column.notNull())
+		.addColumn("word", "text", (column) => column.notNull())
+		.addColumn("fetched_at", "integer", (column) => column.notNull())
+		.addPrimaryKeyConstraint("daily_words_pk", ["date", "language"])
+		.execute();
+	await database.schema
+		.createTable("used_words")
+		.ifNotExists()
+		.addColumn("id", "integer", (column) => column.primaryKey().autoIncrement())
+		.addColumn("chat_id", "integer", (column) => column.notNull())
+		.addColumn("word", "text", (column) => column.notNull())
+		.addColumn("used_at", "integer", (column) => column.notNull())
+		.execute();
+	await database.schema
+		.createIndex("idx_used_words")
+		.ifNotExists()
+		.on("used_words")
+		.columns(["chat_id", "used_at"])
+		.execute();
+	await database.schema
+		.createTable("tournaments")
+		.ifNotExists()
+		.addColumn("id", "integer", (column) => column.primaryKey().autoIncrement())
+		.addColumn("chat_id", "integer", (column) => column.notNull())
+		.addColumn("rounds", "integer", (column) => column.notNull())
+		.addColumn("current_round", "integer", (column) =>
+			column.notNull().defaultTo(1),
+		)
+		.addColumn("status", "text", (column) =>
+			column.notNull().defaultTo("joining"),
+		)
+		.addColumn("players", "text", (column) => column.notNull().defaultTo("[]"))
+		.addColumn("scores", "text", (column) => column.notNull().defaultTo("{}"))
+		.addColumn("turn_idx", "integer", (column) => column.notNull().defaultTo(0))
+		.addColumn("fail_count", "integer", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addColumn("turn_started_at", "integer")
+		.addColumn("message_thread_id", "integer")
+		.addColumn("created_by", "integer", (column) => column.notNull())
+		.execute();
+	await database.schema
+		.createTable("duels")
+		.ifNotExists()
+		.addColumn("id", "integer", (column) => column.primaryKey().autoIncrement())
+		.addColumn("chat_id", "integer", (column) => column.notNull())
+		.addColumn("message_thread_id", "integer")
+		.addColumn("answer", "text", (column) => column.notNull())
+		.addColumn("status", "text", (column) =>
+			column.notNull().defaultTo("pending"),
+		)
+		.addColumn("challenger", "text", (column) => column.notNull())
+		.addColumn("opponent", "text")
+		.execute();
+	await database.schema
+		.createTable("board_messages")
+		.ifNotExists()
+		.addColumn("chat_id", "integer", (column) => column.notNull())
+		.addColumn("thread_id", "integer", (column) => column.notNull())
+		.addColumn("message_ids", "text", (column) => column.notNull())
+		.addColumn("updated_at", "integer", (column) => column.notNull())
+		.addPrimaryKeyConstraint("board_messages_pk", ["chat_id", "thread_id"])
+		.execute();
+	await database.schema
+		.createTable("personal_scopes")
+		.ifNotExists()
+		.addColumn("id", "integer", (column) => column.primaryKey().autoIncrement())
+		.addColumn("chat_id", "integer", (column) => column.notNull())
+		.addColumn("user_id", "integer", (column) => column.notNull())
+		.addColumn("scope_chat_id", "integer", (column) => column.unique())
+		.addUniqueConstraint("personal_scopes_chat_user_unique", [
+			"chat_id",
+			"user_id",
+		])
+		.execute();
+	await database.schema
+		.createTable("stats")
+		.ifNotExists()
+		.addColumn("chat_id", "integer", (column) => column.notNull())
+		.addColumn("user_id", "integer", (column) => column.notNull())
+		.addColumn("name", "text", (column) => column.notNull().defaultTo(""))
+		.addColumn("games_played", "integer", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addColumn("games_won", "integer", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addColumn("solves", "integer", (column) => column.notNull().defaultTo(0))
+		.addColumn("guesses_total", "integer", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addColumn("guess_quality_count", "integer", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addColumn("guess_expected_remaining_sum", "real", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addColumn("guess_quality_points_sum", "integer", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addColumn("greens", "integer", (column) => column.notNull().defaultTo(0))
+		.addColumn("yellows", "integer", (column) => column.notNull().defaultTo(0))
+		.addColumn("current_streak", "integer", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addColumn("best_streak", "integer", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addColumn("dist1", "integer", (column) => column.notNull().defaultTo(0))
+		.addColumn("dist2", "integer", (column) => column.notNull().defaultTo(0))
+		.addColumn("dist3", "integer", (column) => column.notNull().defaultTo(0))
+		.addColumn("dist4", "integer", (column) => column.notNull().defaultTo(0))
+		.addColumn("dist5", "integer", (column) => column.notNull().defaultTo(0))
+		.addColumn("dist6", "integer", (column) => column.notNull().defaultTo(0))
+		.addColumn("fastest_ms", "integer")
+		.addColumn("tournaments_played", "integer", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addColumn("tournaments_won", "integer", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addColumn("tournament_points", "integer", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addColumn("duels_played", "integer", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addColumn("duels_won", "integer", (column) =>
+			column.notNull().defaultTo(0),
+		)
+		.addPrimaryKeyConstraint("stats_pk", ["chat_id", "user_id"])
+		.execute();
+
+	await addColumnIfMissing(
+		database,
+		"tournaments",
+		"fail_count",
+		"fail_count INTEGER NOT NULL DEFAULT 0",
+	);
+	await addColumnIfMissing(
+		database,
+		"tournaments",
+		"turn_started_at",
+		"turn_started_at INTEGER",
+	);
+	await addColumnIfMissing(
+		database,
+		"tournaments",
+		"message_thread_id",
+		"message_thread_id INTEGER",
+	);
+	await addColumnIfMissing(
+		database,
+		"duels",
+		"message_thread_id",
+		"message_thread_id INTEGER",
+	);
+	await addColumnIfMissing(
+		database,
+		"games",
+		"language",
+		"language TEXT NOT NULL DEFAULT 'en'",
+	);
+	await addColumnIfMissing(database, "games", "daily_date", "daily_date TEXT");
+	await addColumnIfMissing(
+		database,
+		"stats",
+		"guess_quality_count",
+		"guess_quality_count INTEGER NOT NULL DEFAULT 0",
+	);
+	await addColumnIfMissing(
+		database,
+		"stats",
+		"guess_expected_remaining_sum",
+		"guess_expected_remaining_sum REAL NOT NULL DEFAULT 0",
+	);
+	await addColumnIfMissing(
+		database,
+		"stats",
+		"guess_quality_points_sum",
+		"guess_quality_points_sum INTEGER NOT NULL DEFAULT 0",
+	);
+}
+
+export function initDatabase(path: string): () => Promise<Database> {
+	return async () => {
+		const database = new Kysely<DatabaseSchema>({
+			dialect: new DenoSqlite3Dialect({
+				database: new SqliteDatabase(path, {
+					int64: true,
+					parseJson: false,
+				}),
+			}),
+		});
+
+		await migrate(database);
+		return database;
+	};
 }
 
 // ---------- chats / settings ----------
 
-export function getSettings(db: Database, chatId: number): ChatSettings {
+export async function getSettings(
+	db: Database,
+	chatId: number,
+): Promise<ChatSettings> {
 	const row = normalizeSqlRow(
-		db.prepare("SELECT settings FROM chats WHERE chat_id = ?").get(chatId) as
-			| { settings: string }
-			| undefined,
+		await db
+			.selectFrom("chats")
+			.select("settings")
+			.where("chat_id", "=", chatId)
+			.executeTakeFirst(),
 	);
 	if (!row) return structuredClone(DEFAULT_SETTINGS);
 	const parsed = JSON.parse(row.settings);
@@ -438,65 +616,65 @@ export function saveSettings(
 	db: Database,
 	chatId: number,
 	s: ChatSettings,
-): void {
-	db.prepare(
-		`INSERT INTO chats (chat_id, settings) VALUES (?, ?)
-     ON CONFLICT(chat_id) DO UPDATE SET settings = excluded.settings`,
-	).run(chatId, JSON.stringify(s));
+): Promise<void> {
+	return db
+		.insertInto("chats")
+		.values({ chat_id: chatId, settings: JSON.stringify(s) })
+		.onConflict((oc) =>
+			oc.column("chat_id").doUpdateSet({ settings: JSON.stringify(s) }),
+		)
+		.execute()
+		.then(() => {});
 }
 
 // ---------- personal game scopes ----------
 
-export function getPersonalScopeChatId(
+export async function getPersonalScopeChatId(
 	db: Database,
 	chatId: number,
 	userId: number,
-): number | null {
+): Promise<number | null> {
 	const row = normalizeSqlRow(
-		db
-			.prepare(
-				"SELECT scope_chat_id FROM personal_scopes WHERE chat_id = ? AND user_id = ?",
-			)
-			.get(chatId, userId) as { scope_chat_id: number | null } | undefined,
+		await db
+			.selectFrom("personal_scopes")
+			.select("scope_chat_id")
+			.where("chat_id", "=", chatId)
+			.where("user_id", "=", userId)
+			.executeTakeFirst(),
 	);
 	return row?.scope_chat_id ?? null;
 }
 
-export function getOrCreatePersonalScopeChatId(
+export async function getOrCreatePersonalScopeChatId(
 	db: Database,
 	chatId: number,
 	userId: number,
-): number {
-	const existing = getPersonalScopeChatId(db, chatId, userId);
+): Promise<number> {
+	const existing = await getPersonalScopeChatId(db, chatId, userId);
 	if (existing !== null) return existing;
 
-	db.prepare(
-		"INSERT INTO personal_scopes (chat_id, user_id) VALUES (?, ?) ON CONFLICT(chat_id, user_id) DO NOTHING",
-	).run(chatId, userId);
-	const row =
-		db.changes === 0
-			? normalizeSqlRow(
-					db
-						.prepare(
-							"SELECT id, scope_chat_id FROM personal_scopes WHERE chat_id = ? AND user_id = ?",
-						)
-						.get(chatId, userId) as {
-						id: number;
-						scope_chat_id: number | null;
-					},
-				)
-			: ({ id: db.lastInsertRowId, scope_chat_id: null } as {
-					id: number;
-					scope_chat_id: number | null;
-				});
+	await db
+		.insertInto("personal_scopes")
+		.values({ chat_id: chatId, user_id: userId, scope_chat_id: null })
+		.onConflict((oc) => oc.columns(["chat_id", "user_id"]).doNothing())
+		.execute();
+	const row = normalizeSqlRow(
+		await db
+			.selectFrom("personal_scopes")
+			.select(["id", "scope_chat_id"])
+			.where("chat_id", "=", chatId)
+			.where("user_id", "=", userId)
+			.executeTakeFirstOrThrow(),
+	);
 
 	if (row.scope_chat_id !== null) return row.scope_chat_id;
 
 	const scopeChatId = PERSONAL_SCOPE_BASE - row.id;
-	db.prepare("UPDATE personal_scopes SET scope_chat_id = ? WHERE id = ?").run(
-		scopeChatId,
-		row.id,
-	);
+	await db
+		.updateTable("personal_scopes")
+		.set({ scope_chat_id: scopeChatId })
+		.where("id", "=", row.id)
+		.execute();
 	return scopeChatId;
 }
 
@@ -506,19 +684,18 @@ function boardThreadKey(messageThreadId: number | null): number {
 	return messageThreadId ?? 0;
 }
 
-export function getBoardMessageIds(
+export async function getBoardMessageIds(
 	db: Database,
 	chatId: number,
 	messageThreadId: number | null,
-): number[] {
+): Promise<number[]> {
 	const row = normalizeSqlRow(
-		db
-			.prepare(
-				"SELECT message_ids FROM board_messages WHERE chat_id = ? AND thread_id = ?",
-			)
-			.get(chatId, boardThreadKey(messageThreadId)) as
-			| { message_ids: string }
-			| undefined,
+		await db
+			.selectFrom("board_messages")
+			.select("message_ids")
+			.where("chat_id", "=", chatId)
+			.where("thread_id", "=", boardThreadKey(messageThreadId))
+			.executeTakeFirst(),
 	);
 	if (!row) return [];
 
@@ -533,18 +710,24 @@ export function saveBoardMessageIds(
 	chatId: number,
 	messageThreadId: number | null,
 	messageIds: number[],
-): void {
-	db.prepare(
-		`INSERT INTO board_messages (chat_id, thread_id, message_ids, updated_at) VALUES (?, ?, ?, ?)
-     ON CONFLICT(chat_id, thread_id) DO UPDATE SET
-       message_ids = excluded.message_ids,
-       updated_at = excluded.updated_at`,
-	).run(
-		chatId,
-		boardThreadKey(messageThreadId),
-		JSON.stringify(messageIds),
-		Date.now(),
-	);
+): Promise<void> {
+	const values = {
+		chat_id: chatId,
+		thread_id: boardThreadKey(messageThreadId),
+		message_ids: JSON.stringify(messageIds),
+		updated_at: Date.now(),
+	};
+	return db
+		.insertInto("board_messages")
+		.values(values)
+		.onConflict((oc) =>
+			oc.columns(["chat_id", "thread_id"]).doUpdateSet({
+				message_ids: values.message_ids,
+				updated_at: values.updated_at,
+			}),
+		)
+		.execute()
+		.then(() => {});
 }
 
 // ---------- games ----------
@@ -559,64 +742,87 @@ function parseGame(row: GameSqlRow): GameRow {
 	};
 }
 
-export function getActiveGame(db: Database, chatId: number): GameRow | null {
-	const row = db
-		.prepare(
-			`SELECT * FROM games WHERE chat_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1`,
-		)
-		.get<GameSqlRow>(chatId);
+export async function getActiveGame(
+	db: Database,
+	chatId: number,
+): Promise<GameRow | null> {
+	const row = await db
+		.selectFrom("games")
+		.selectAll()
+		.where("chat_id", "=", chatId)
+		.where("status", "=", "active")
+		.orderBy("id", "desc")
+		.limit(1)
+		.executeTakeFirst();
 	return row ? parseGame(row) : null;
 }
 
-export function getGame(db: Database, id: number): GameRow | null {
-	const row = db
-		.prepare("SELECT * FROM games WHERE id = ?")
-		.get<GameSqlRow>(id);
+export async function getGame(
+	db: Database,
+	id: number,
+): Promise<GameRow | null> {
+	const row = await db
+		.selectFrom("games")
+		.selectAll()
+		.where("id", "=", id)
+		.executeTakeFirst();
 	return row ? parseGame(row) : null;
 }
 
-export function createGame(
+export async function createGame(
 	db: Database,
 	chatId: number,
 	answer: string,
 	language: WordLanguage,
 	kind: GameKind = "normal",
 	opts: { tournamentId?: number; duelId?: number; dailyDate?: string } = {},
-): GameRow {
+): Promise<GameRow> {
 	const now = Date.now();
-	db.prepare(
-		`INSERT INTO games (chat_id, answer, language, kind, started_at, tournament_id, duel_id, daily_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-	).run(
-		chatId,
-		answer,
-		language,
-		kind,
-		now,
-		opts.tournamentId ?? null,
-		opts.duelId ?? null,
-		opts.dailyDate ?? null,
-	);
-	return getGame(db, db.lastInsertRowId)!;
+	const result = await db
+		.insertInto("games")
+		.values({
+			chat_id: chatId,
+			answer,
+			language,
+			kind,
+			started_at: now,
+			finished_at: null,
+			tournament_id: opts.tournamentId ?? null,
+			duel_id: opts.duelId ?? null,
+			daily_date: opts.dailyDate ?? null,
+		})
+		.executeTakeFirst();
+	return (await getGame(db, Number(result.insertId)))!;
 }
 
-export function updateGame(db: Database, game: GameRow): void {
-	db.prepare(
-		`UPDATE games SET status = ?, guesses = ?, finished_at = ? WHERE id = ?`,
-	).run(game.status, JSON.stringify(game.guesses), game.finished_at, game.id);
+export function updateGame(db: Database, game: GameRow): Promise<void> {
+	return db
+		.updateTable("games")
+		.set({
+			status: game.status,
+			guesses: JSON.stringify(game.guesses),
+			finished_at: game.finished_at,
+		})
+		.where("id", "=", game.id)
+		.execute()
+		.then(() => {});
 }
 
-export function getDailyWord(
+export async function getDailyWord(
 	db: Database,
 	date: string,
 	language: WordLanguage,
-): DailyWordRow | null {
+): Promise<DailyWordRow | null> {
 	const row = normalizeSqlRow(
-		db
-			.prepare("SELECT * FROM daily_words WHERE date = ? AND language = ?")
-			.get(date, language) as DailyWordRow | undefined,
+		await db
+			.selectFrom("daily_words")
+			.selectAll()
+			.where("date", "=", date)
+			.where("language", "=", language)
+			.executeTakeFirst(),
 	);
-	return row && isWordLanguage(row.language) ? row : null;
+	if (!row || !isWordLanguage(row.language)) return null;
+	return { ...row, language: row.language };
 }
 
 export function saveDailyWord(
@@ -624,53 +830,57 @@ export function saveDailyWord(
 	date: string,
 	language: WordLanguage,
 	word: string,
-): void {
-	db.prepare(
-		`INSERT INTO daily_words (date, language, word, fetched_at)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(date, language) DO NOTHING`,
-	).run(date, language, word.toLowerCase(), Date.now());
+): Promise<void> {
+	return db
+		.insertInto("daily_words")
+		.values({
+			date,
+			language,
+			word: word.toLowerCase(),
+			fetched_at: Date.now(),
+		})
+		.onConflict((oc) => oc.columns(["date", "language"]).doNothing())
+		.execute()
+		.then(() => {});
 }
 
-export function getCompletedDailyGame(
+export async function getCompletedDailyGame(
 	db: Database,
 	chatId: number,
 	date: string,
 	language: WordLanguage,
-): GameRow | null {
-	const row = db
-		.prepare(
-			`SELECT * FROM games
-       WHERE chat_id = ?
-         AND daily_date = ?
-         AND language = ?
-         AND kind = 'normal'
-         AND status IN ('solved', 'lost')
-       ORDER BY id DESC
-       LIMIT 1`,
-		)
-		.get<GameSqlRow>(chatId, date, language);
+): Promise<GameRow | null> {
+	const row = await db
+		.selectFrom("games")
+		.selectAll()
+		.where("chat_id", "=", chatId)
+		.where("daily_date", "=", date)
+		.where("language", "=", language)
+		.where("kind", "=", "normal")
+		.where("status", "in", ["solved", "lost"])
+		.orderBy("id", "desc")
+		.limit(1)
+		.executeTakeFirst();
 	return row ? parseGame(row) : null;
 }
 
-export function getPausedDailyGame(
+export async function getPausedDailyGame(
 	db: Database,
 	chatId: number,
 	date: string,
 	language: WordLanguage,
-): GameRow | null {
-	const row = db
-		.prepare(
-			`SELECT * FROM games
-       WHERE chat_id = ?
-         AND daily_date = ?
-         AND language = ?
-         AND kind = 'normal'
-         AND status = 'paused'
-       ORDER BY id DESC
-       LIMIT 1`,
-		)
-		.get<GameSqlRow>(chatId, date, language);
+): Promise<GameRow | null> {
+	const row = await db
+		.selectFrom("games")
+		.selectAll()
+		.where("chat_id", "=", chatId)
+		.where("daily_date", "=", date)
+		.where("language", "=", language)
+		.where("kind", "=", "normal")
+		.where("status", "=", "paused")
+		.orderBy("id", "desc")
+		.limit(1)
+		.executeTakeFirst();
 	return row ? parseGame(row) : null;
 }
 
@@ -680,34 +890,39 @@ export function recordUsedWord(
 	db: Database,
 	chatId: number,
 	word: string,
-): void {
-	db.prepare(
-		"INSERT INTO used_words (chat_id, word, used_at) VALUES (?, ?, ?)",
-	).run(chatId, word.toLowerCase(), Date.now());
+): Promise<void> {
+	return db
+		.insertInto("used_words")
+		.values({ chat_id: chatId, word: word.toLowerCase(), used_at: Date.now() })
+		.execute()
+		.then(() => {});
 }
 
-export function recentWords(
+export async function recentWords(
 	db: Database,
 	chatId: number,
 	c: CreativitySettings,
-): Set<string> {
+): Promise<Set<string>> {
 	if (!c.enabled || !c.configured) return new Set();
 	let rows: { word: string }[];
 	if (c.mode === "time") {
 		rows = normalizeSqlRows(
-			db
-				.prepare(
-					"SELECT word FROM used_words WHERE chat_id = ? AND used_at >= ?",
-				)
-				.all(chatId, Date.now() - c.seconds * 1000) as { word: string }[],
+			await db
+				.selectFrom("used_words")
+				.select("word")
+				.where("chat_id", "=", chatId)
+				.where("used_at", ">=", Date.now() - c.seconds * 1000)
+				.execute(),
 		);
 	} else {
 		rows = normalizeSqlRows(
-			db
-				.prepare(
-					"SELECT word FROM used_words WHERE chat_id = ? ORDER BY id DESC LIMIT ?",
-				)
-				.all(chatId, c.count) as { word: string }[],
+			await db
+				.selectFrom("used_words")
+				.select("word")
+				.where("chat_id", "=", chatId)
+				.orderBy("id", "desc")
+				.limit(c.count)
+				.execute(),
 		);
 	}
 	return new Set(rows.map((r) => r.word));
@@ -727,62 +942,86 @@ function parseTournament(row: TournamentSqlRow): TournamentRow {
 	};
 }
 
-export function getOpenTournament(
+export async function getOpenTournament(
 	db: Database,
 	chatId: number,
-): TournamentRow | null {
-	const row = db
-		.prepare(
-			`SELECT * FROM tournaments WHERE chat_id = ? AND status IN ('joining','active') ORDER BY id DESC LIMIT 1`,
-		)
-		.get<TournamentSqlRow>(chatId);
+): Promise<TournamentRow | null> {
+	const row = await db
+		.selectFrom("tournaments")
+		.selectAll()
+		.where("chat_id", "=", chatId)
+		.where("status", "in", ["joining", "active"])
+		.orderBy("id", "desc")
+		.limit(1)
+		.executeTakeFirst();
 	return row ? parseTournament(row) : null;
 }
 
-export function getTournament(db: Database, id: number): TournamentRow | null {
-	const row = db
-		.prepare("SELECT * FROM tournaments WHERE id = ?")
-		.get<TournamentSqlRow>(id);
+export async function getTournament(
+	db: Database,
+	id: number,
+): Promise<TournamentRow | null> {
+	const row = await db
+		.selectFrom("tournaments")
+		.selectAll()
+		.where("id", "=", id)
+		.executeTakeFirst();
 	return row ? parseTournament(row) : null;
 }
 
-export function getActiveTournaments(db: Database): TournamentRow[] {
+export async function getActiveTournaments(
+	db: Database,
+): Promise<TournamentRow[]> {
 	const rows = normalizeSqlRows(
-		db
-			.prepare(`SELECT * FROM tournaments WHERE status = 'active'`)
-			.all<TournamentSqlRow>(),
+		await db
+			.selectFrom("tournaments")
+			.selectAll()
+			.where("status", "=", "active")
+			.execute(),
 	);
 	return rows.map(parseTournament);
 }
 
-export function createTournament(
+export async function createTournament(
 	db: Database,
 	chatId: number,
 	rounds: number,
 	createdBy: number,
 	messageThreadId: number | null = null,
-): TournamentRow {
-	db.prepare(
-		"INSERT INTO tournaments (chat_id, rounds, created_by, message_thread_id) VALUES (?, ?, ?, ?)",
-	).run(chatId, rounds, createdBy, messageThreadId);
-	return getTournament(db, db.lastInsertRowId)!;
+): Promise<TournamentRow> {
+	const result = await db
+		.insertInto("tournaments")
+		.values({
+			chat_id: chatId,
+			rounds,
+			created_by: createdBy,
+			message_thread_id: messageThreadId,
+			turn_started_at: null,
+		})
+		.executeTakeFirst();
+	return (await getTournament(db, Number(result.insertId)))!;
 }
 
-export function updateTournament(db: Database, t: TournamentRow): void {
-	db.prepare(
-		`UPDATE tournaments SET rounds = ?, current_round = ?, status = ?, players = ?, scores = ?, turn_idx = ?, fail_count = ?, turn_started_at = ?, message_thread_id = ? WHERE id = ?`,
-	).run(
-		t.rounds,
-		t.current_round,
-		t.status,
-		JSON.stringify(t.players),
-		JSON.stringify(t.scores),
-		t.turn_idx,
-		t.fail_count,
-		t.turn_started_at,
-		t.message_thread_id,
-		t.id,
-	);
+export function updateTournament(
+	db: Database,
+	t: TournamentRow,
+): Promise<void> {
+	return db
+		.updateTable("tournaments")
+		.set({
+			rounds: t.rounds,
+			current_round: t.current_round,
+			status: t.status,
+			players: JSON.stringify(t.players),
+			scores: JSON.stringify(t.scores),
+			turn_idx: t.turn_idx,
+			fail_count: t.fail_count,
+			turn_started_at: t.turn_started_at,
+			message_thread_id: t.message_thread_id,
+		})
+		.where("id", "=", t.id)
+		.execute()
+		.then(() => {});
 }
 
 // ---------- duels ----------
@@ -796,132 +1035,149 @@ function parseDuel(row: DuelSqlRow): DuelRow {
 	};
 }
 
-export function createDuel(
+export async function createDuel(
 	db: Database,
 	chatId: number,
 	messageThreadId: number | null,
 	answer: string,
 	challenger: DuelPlayerResult,
-): DuelRow {
-	db.prepare(
-		"INSERT INTO duels (chat_id, message_thread_id, answer, challenger) VALUES (?, ?, ?, ?)",
-	).run(chatId, messageThreadId, answer, JSON.stringify(challenger));
-	return getDuel(db, db.lastInsertRowId)!;
+): Promise<DuelRow> {
+	const result = await db
+		.insertInto("duels")
+		.values({
+			chat_id: chatId,
+			message_thread_id: messageThreadId,
+			answer,
+			challenger: JSON.stringify(challenger),
+			opponent: null,
+		})
+		.executeTakeFirst();
+	return (await getDuel(db, Number(result.insertId)))!;
 }
 
-export function getDuel(db: Database, id: number): DuelRow | null {
-	const row = db
-		.prepare("SELECT * FROM duels WHERE id = ?")
-		.get<DuelSqlRow>(id);
+export async function getDuel(
+	db: Database,
+	id: number,
+): Promise<DuelRow | null> {
+	const row = await db
+		.selectFrom("duels")
+		.selectAll()
+		.where("id", "=", id)
+		.executeTakeFirst();
 	return row ? parseDuel(row) : null;
 }
 
-export function updateDuel(db: Database, d: DuelRow): void {
-	db.prepare(
-		"UPDATE duels SET status = ?, challenger = ?, opponent = ? WHERE id = ?",
-	).run(
-		d.status,
-		JSON.stringify(d.challenger),
-		d.opponent ? JSON.stringify(d.opponent) : null,
-		d.id,
-	);
+export function updateDuel(db: Database, d: DuelRow): Promise<void> {
+	return db
+		.updateTable("duels")
+		.set({
+			status: d.status,
+			challenger: JSON.stringify(d.challenger),
+			opponent: d.opponent ? JSON.stringify(d.opponent) : null,
+		})
+		.where("id", "=", d.id)
+		.execute()
+		.then(() => {});
 }
 
 // ---------- stats ----------
 
-export function getStats(
+export async function getStats(
 	db: Database,
 	chatId: number,
 	userId: number,
-): StatsRow {
+): Promise<StatsRow> {
 	let row = normalizeSqlRow(
-		db
-			.prepare("SELECT * FROM stats WHERE chat_id = ? AND user_id = ?")
-			.get(chatId, userId) as StatsRow | undefined,
+		await db
+			.selectFrom("stats")
+			.selectAll()
+			.where("chat_id", "=", chatId)
+			.where("user_id", "=", userId)
+			.executeTakeFirst(),
 	);
 	if (!row) {
-		db.prepare("INSERT INTO stats (chat_id, user_id) VALUES (?, ?)").run(
-			chatId,
-			userId,
-		);
+		await sql`INSERT INTO stats (chat_id, user_id)
+			VALUES (${chatId}, ${userId})`.execute(db);
 		row = normalizeSqlRow(
-			db
-				.prepare("SELECT * FROM stats WHERE chat_id = ? AND user_id = ?")
-				.get(chatId, userId) as StatsRow,
+			await db
+				.selectFrom("stats")
+				.selectAll()
+				.where("chat_id", "=", chatId)
+				.where("user_id", "=", userId)
+				.executeTakeFirstOrThrow(),
 		);
 	}
 	return row;
 }
 
-export function findStatsByName(
+export async function findStatsByName(
 	db: Database,
 	chatId: number,
 	query: string,
-): StatsRow | null {
+): Promise<StatsRow | null> {
 	const needle = query.trim().toLowerCase();
 	if (!needle) return null;
 	const row = normalizeSqlRow(
-		db
-			.prepare(
-				`SELECT *
-       FROM stats
-       WHERE chat_id = ?
-         AND name <> ''
-         AND instr(lower(name), ?) > 0
-       ORDER BY
-         CASE
-           WHEN lower(name) = ? THEN 0
-           WHEN substr(lower(name), 1, length(?)) = ? THEN 1
-           ELSE 2
-         END,
-         games_played DESC,
-         user_id ASC
-       LIMIT 1`,
-			)
-			.get(chatId, needle, needle, needle, needle) as StatsRow | undefined,
+		(
+			await sql<StatsRow>`SELECT *
+				FROM stats
+				WHERE chat_id = ${chatId}
+					AND name <> ''
+					AND instr(lower(name), ${needle}) > 0
+				ORDER BY
+					CASE
+						WHEN lower(name) = ${needle} THEN 0
+						WHEN substr(lower(name), 1, length(${needle})) = ${needle} THEN 1
+						ELSE 2
+					END,
+					games_played DESC,
+					user_id ASC
+				LIMIT 1`.execute(db)
+		).rows[0],
 	);
 	return row ?? null;
 }
 
-export function getGlobalStats(db: Database, userId: number): StatsRow {
+export async function getGlobalStats(
+	db: Database,
+	userId: number,
+): Promise<StatsRow> {
 	return normalizeSqlRow(
-		db
-			.prepare(
-				`SELECT
-        0 AS chat_id,
-        ? AS user_id,
-        COALESCE(MAX(NULLIF(name, '')), '') AS name,
-        COALESCE(SUM(games_played), 0) AS games_played,
-        COALESCE(SUM(games_won), 0) AS games_won,
-        COALESCE(SUM(solves), 0) AS solves,
-        COALESCE(SUM(guesses_total), 0) AS guesses_total,
-        COALESCE(SUM(guess_quality_count), 0) AS guess_quality_count,
-        COALESCE(SUM(guess_expected_remaining_sum), 0) AS guess_expected_remaining_sum,
-        COALESCE(SUM(guess_quality_points_sum), 0) AS guess_quality_points_sum,
-        COALESCE(SUM(greens), 0) AS greens,
-        COALESCE(SUM(yellows), 0) AS yellows,
-        COALESCE(MAX(current_streak), 0) AS current_streak,
-        COALESCE(MAX(best_streak), 0) AS best_streak,
-        COALESCE(SUM(dist1), 0) AS dist1,
-        COALESCE(SUM(dist2), 0) AS dist2,
-        COALESCE(SUM(dist3), 0) AS dist3,
-        COALESCE(SUM(dist4), 0) AS dist4,
-        COALESCE(SUM(dist5), 0) AS dist5,
-        COALESCE(SUM(dist6), 0) AS dist6,
-        MIN(fastest_ms) AS fastest_ms,
-        COALESCE(SUM(tournaments_played), 0) AS tournaments_played,
-        COALESCE(SUM(tournaments_won), 0) AS tournaments_won,
-        COALESCE(SUM(tournament_points), 0) AS tournament_points,
-        COALESCE(SUM(duels_played), 0) AS duels_played,
-        COALESCE(SUM(duels_won), 0) AS duels_won
-       FROM stats
-       WHERE user_id = ?`,
-			)
-			.get(userId, userId) as StatsRow,
+		(
+			await sql<StatsRow>`SELECT
+				0 AS chat_id,
+				${userId} AS user_id,
+				COALESCE(MAX(NULLIF(name, '')), '') AS name,
+				COALESCE(SUM(games_played), 0) AS games_played,
+				COALESCE(SUM(games_won), 0) AS games_won,
+				COALESCE(SUM(solves), 0) AS solves,
+				COALESCE(SUM(guesses_total), 0) AS guesses_total,
+				COALESCE(SUM(guess_quality_count), 0) AS guess_quality_count,
+				COALESCE(SUM(guess_expected_remaining_sum), 0) AS guess_expected_remaining_sum,
+				COALESCE(SUM(guess_quality_points_sum), 0) AS guess_quality_points_sum,
+				COALESCE(SUM(greens), 0) AS greens,
+				COALESCE(SUM(yellows), 0) AS yellows,
+				COALESCE(MAX(current_streak), 0) AS current_streak,
+				COALESCE(MAX(best_streak), 0) AS best_streak,
+				COALESCE(SUM(dist1), 0) AS dist1,
+				COALESCE(SUM(dist2), 0) AS dist2,
+				COALESCE(SUM(dist3), 0) AS dist3,
+				COALESCE(SUM(dist4), 0) AS dist4,
+				COALESCE(SUM(dist5), 0) AS dist5,
+				COALESCE(SUM(dist6), 0) AS dist6,
+				MIN(fastest_ms) AS fastest_ms,
+				COALESCE(SUM(tournaments_played), 0) AS tournaments_played,
+				COALESCE(SUM(tournaments_won), 0) AS tournaments_won,
+				COALESCE(SUM(tournament_points), 0) AS tournament_points,
+				COALESCE(SUM(duels_played), 0) AS duels_played,
+				COALESCE(SUM(duels_won), 0) AS duels_won
+				FROM stats
+				WHERE user_id = ${userId}`.execute(db)
+		).rows[0],
 	);
 }
 
-export function bumpStats(
+export async function bumpStats(
 	db: Database,
 	chatId: number,
 	userId: number,
@@ -936,32 +1192,26 @@ export function bumpStats(
 		>
 	>,
 	extra: { setCurrentStreak?: number; fastestMs?: number } = {},
-): void {
-	const row = getStats(db, chatId, userId);
-	const updates: string[] = ["name = ?"];
-	const values: (string | number | null)[] = [name];
+): Promise<void> {
+	const row = await getStats(db, chatId, userId);
+	const updates = [sql`name = ${name}`];
 	for (const [k, v] of Object.entries(delta)) {
 		if (!v) continue;
-		updates.push(`${k} = ${k} + ?`);
-		values.push(v);
+		updates.push(sql`${sql.ref(k)} = ${sql.ref(k)} + ${v}`);
 	}
 	if (extra.setCurrentStreak !== undefined) {
-		updates.push("current_streak = ?");
-		values.push(extra.setCurrentStreak);
+		updates.push(sql`current_streak = ${extra.setCurrentStreak}`);
 		if (extra.setCurrentStreak > row.best_streak) {
-			updates.push("best_streak = ?");
-			values.push(extra.setCurrentStreak);
+			updates.push(sql`best_streak = ${extra.setCurrentStreak}`);
 		}
 	}
 	if (
 		extra.fastestMs !== undefined &&
 		(row.fastest_ms === null || extra.fastestMs < row.fastest_ms)
 	) {
-		updates.push("fastest_ms = ?");
-		values.push(extra.fastestMs);
+		updates.push(sql`fastest_ms = ${extra.fastestMs}`);
 	}
-	values.push(chatId, userId);
-	db.prepare(
-		`UPDATE stats SET ${updates.join(", ")} WHERE chat_id = ? AND user_id = ?`,
-	).run(...values);
+	await sql`UPDATE stats
+		SET ${sql.join(updates)}
+		WHERE chat_id = ${chatId} AND user_id = ${userId}`.execute(db);
 }

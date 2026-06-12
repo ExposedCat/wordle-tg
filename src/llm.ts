@@ -1,5 +1,8 @@
 import OpenAI from "@openai/openai";
 import { OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL } from "./config.ts";
+import { createLogger } from "./log.ts";
+
+const log = createLogger("llm");
 
 let client: OpenAI | null = null;
 const SHORT_OUTPUT_TOKENS = 512;
@@ -30,6 +33,7 @@ export async function describeWordMeaning(
 ): Promise<string | undefined> {
 	const openai = openaiClient();
 	if (!openai) return undefined;
+	log.debug("Requesting word meaning", { word });
 
 	const prompt = `Write a single-sentence complete and concise meaning(s) of the word "${word}", using word's language.`;
 	const response = await openai.responses.create({
@@ -40,6 +44,12 @@ export async function describeWordMeaning(
 	});
 
 	const text = response.output_text.trim();
+	log.debug("Received word meaning response", {
+		word,
+		responseId: response.id,
+		status: response.status,
+		textLength: text.length,
+	});
 	return text.length > 0 ? text : undefined;
 }
 
@@ -54,6 +64,12 @@ export async function roastBadGuess(input: {
 	if (!openai) return undefined;
 
 	const word = input.word.toUpperCase();
+	log.debug("Requesting guess roast", {
+		word,
+		possibleCount: input.possibleCount,
+		actualRemaining: input.actualRemaining,
+		averageRemaining: input.averageRemaining,
+	});
 	const prompt = `Roast this bad Wordle guess: ${word}
 
 Rules:
@@ -72,8 +88,14 @@ Rules:
 	});
 
 	const text = response.output_text.trim();
+	log.debug("Received guess roast response", {
+		word,
+		responseId: response.id,
+		status: response.status,
+		textLength: text.length,
+	});
 	if (text.length === 0) {
-		console.error("Roast LLM returned empty output", {
+		log.warn("Roast LLM returned empty output", {
 			word,
 			responseId: response.id,
 			status: response.status,
