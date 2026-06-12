@@ -8,6 +8,56 @@ const log = createLogger("llm");
 let client: OpenAI | null = null;
 const SHORT_OUTPUT_TOKENS = 512;
 const ROAST_OUTPUT_TOKENS = 192;
+const ROAST_SEED_LENGTH = 100;
+const ROAST_INSTRUCTIONS = [
+	"Roast this bad Wordle guess: ",
+	"Mock this doomed Wordle guess: ",
+	"Give this awful Wordle guess the roast it earned: ",
+	"Trash this cursed Wordle guess: ",
+	"Roast the player for choosing this Wordle guess: ",
+	"Make fun of this bad Wordle guess: ",
+	"Skewer this miserable Wordle guess: ",
+	"Drag this Wordle guess through the group chat: ",
+	"Write a sharp roast for this Wordle guess: ",
+	"Call out this terrible Wordle guess: ",
+	"Give a sarcastic jab for this Wordle guess: ",
+	"Punish this weak Wordle guess with one roast: ",
+] as const;
+const ROAST_RULES = [
+	"Use nasty, sarcastic, dark savvy humor.",
+	"Reply in the same language/alphabet as the guessed word.",
+	"Exactly one short sentence.",
+	"Sound like an annoyed friend in a group chat.",
+	"Joke must be sarcastic, non-flat, and not too obvious. It must be deep and smart, and it must roast the guesser.",
+	"You are strictly unallowed to use analogies or comparisons.",
+	"Do not mention scores, numbers, possible words, remaining words, averages, or quality.",
+] as const;
+const EN_ROAST_EXAMPLES = [
+	`"CRANE" -> "CRANE spent all that confidence and bought nothing."`,
+	`"SLATE" -> "SLATE says you wanted strategy but settled for posture."`,
+	`"AUDIO" -> "AUDIO announced that you discovered vowels and stopped thinking."`,
+	`"RAISE" -> "RAISE was brave in the way bad decisions enjoy being witnessed."`,
+	`"PLANT" -> "PLANT really committed to wasting everyone's emotional bandwidth."`,
+	`"HOUSE" -> "HOUSE is what happens when your instincts clock out early."`,
+	`"MONEY" -> "MONEY brought financial-crisis judgment to a five-letter problem."`,
+	`"LIGHT" -> "LIGHT was impressively dim for something trying so hard."`,
+	`"TRAIN" -> "TRAIN arrived late to the thought process and still derailed it."`,
+	`"BREAD" -> "BREAD has the tragic confidence of a guess that learned nothing."`,
+] as const;
+const RU_ROAST_EXAMPLES = [
+	`"МОРЕ" -> "МОРЕ выглядело уверенно, пока не стало ясно, что думать ты не начинал(a)."`,
+	`"СТОЛ" -> "СТОЛ принес в чат ту самую тишину, после которой стыдно всем."`,
+	`"ВЕТЕР" -> "ВЕТЕР был резким напоминанием, что интуиция тоже умеет увольняться."`,
+	`"КОШКА" -> "КОШКА пришла с таким апломбом, будто провал заранее забронировали."`,
+	`"СЛОВО" -> "СЛОВО звучит так, будто мысль застряла еще на заставке."`,
+	`"КНИГА" -> "КНИГА доказала, что чтение не всегда оставляет следы."`,
+	`"ПОЛЕ" -> "ПОЛЕ оставило после себя пространство, где могла быть идея."`,
+	`"ДОЖДЬ" -> "ДОЖДЬ промочил не игру, а остатки твоей репутации."`,
+	`"ЗВУК" -> "ЗВУК был громким только в своей бесполезности."`,
+	`"КАРТА" -> "КАРТА явно не помогла, потому что ты заблудился еще до хода."`,
+] as const;
+const RANDOM_SEED_ALPHABET =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
 function openaiClient(): OpenAI | null {
 	if (!OPENAI_API_KEY) return null;
@@ -23,6 +73,52 @@ function shortResponseOptions(maxOutputTokens = SHORT_OUTPUT_TOKENS) {
 		model: OPENAI_MODEL,
 		max_output_tokens: maxOutputTokens,
 	};
+}
+
+function randomInt(maxExclusive: number): number {
+	return Math.floor(Math.random() * maxExclusive);
+}
+
+function randomSeed(length = ROAST_SEED_LENGTH): string {
+	return Array.from(
+		{ length },
+		() => RANDOM_SEED_ALPHABET[randomInt(RANDOM_SEED_ALPHABET.length)],
+	).join("");
+}
+
+function shuffled<T>(items: readonly T[]): T[] {
+	const result = [...items];
+	for (let index = result.length - 1; index > 0; index--) {
+		const swapIndex = randomInt(index + 1);
+		[result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+	}
+	return result;
+}
+
+function sample<T>(items: readonly T[], count: number): T[] {
+	return shuffled(items).slice(0, count);
+}
+
+function roastExamplesForWord(word: string): readonly string[] {
+	return /[А-Яа-яЁё]/.test(word) ? RU_ROAST_EXAMPLES : EN_ROAST_EXAMPLES;
+}
+
+function buildRoastPrompt(word: string): string {
+	const instruction = ROAST_INSTRUCTIONS[randomInt(ROAST_INSTRUCTIONS.length)];
+	const rules = shuffled(ROAST_RULES)
+		.map((rule) => `- ${rule}`)
+		.join("\n");
+	const examples = sample(roastExamplesForWord(word), 3).join("\n");
+
+	return `Seed: ${randomSeed()}
+${instruction}${word}
+
+Rules:
+${rules}
+
+Good examples:
+${examples}
+Seed: ${randomSeed()}`;
 }
 
 export function hasOpenAIKey(): boolean {
@@ -189,16 +285,7 @@ export async function roastBadGuess(input: {
 		actualRemaining: input.actualRemaining,
 		averageRemaining: input.averageRemaining,
 	});
-	const prompt = `Roast this bad Wordle guess: ${word}
-
-Rules:
-- Use nasty, sarcastic, dark savvy humor.
-- Reply in the same language/alphabet as the guessed word.
-- Exactly one short sentence.
-- Sound like an annoyed friend in a group chat.
-- Joke must be sarcastic, non-flat, and not too obvious. It must be deep and smart, and it must roast the guesser.
-- You are strictly unallowed to use analogies or comparisons.
-- Do not mention scores, numbers, possible words, remaining words, averages, or quality.`;
+	const prompt = buildRoastPrompt(word);
 	const response = await openai.responses.create({
 		...shortResponseOptions(ROAST_OUTPUT_TOKENS),
 		instructions:
