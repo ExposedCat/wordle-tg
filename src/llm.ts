@@ -235,6 +235,9 @@ export async function describeWordMeaning(
 	word: string,
 	language: WordLanguage,
 ): Promise<string | undefined> {
+	const llmMeaning = await describeWordMeaningWithLLM(word, language);
+	if (llmMeaning) return llmMeaning;
+
 	const dictionaryMeaning = await fetchDictionaryMeaning(word, language);
 	if (dictionaryMeaning) {
 		log.debug("Received dictionary word meaning", {
@@ -245,27 +248,43 @@ export async function describeWordMeaning(
 		return dictionaryMeaning;
 	}
 
+	return undefined;
+}
+
+async function describeWordMeaningWithLLM(
+	word: string,
+	language: WordLanguage,
+): Promise<string | undefined> {
 	const openai = openaiClient();
 	if (!openai) return undefined;
 	log.debug("Requesting word meaning", { word, language });
 
-	const prompt = `In language ${language === "ru" ? "Russian" : "English"}, write a single short sentence explaining most common meaning of the word "${word}". After that, add a second single sentece with a fun fact about that word.`;
-	const response = await openai.responses.create({
-		...shortResponseOptions(),
-		instructions:
-			"Return only two requested sentences (description + fun fact). Do NOT use markdown, labels, examples, or extra commentary!",
-		input: prompt,
-	});
+	try {
+		const prompt = `In language ${language === "ru" ? "Russian" : "English"}, write a single short sentence explaining the most common meaning of the word "${word}". After that, add a second single sentence with a fun fact about that word.`;
+		const response = await openai.responses.create({
+			...shortResponseOptions(),
+			instructions:
+				"Return only two requested sentences (description + fun fact). Do NOT use markdown, labels, examples, or extra commentary!",
+			input: prompt,
+		});
 
-	const text = response.output_text.trim();
-	log.debug("Received word meaning response", {
-		word,
-		language,
-		responseId: response.id,
-		status: response.status,
-		textLength: text.length,
-	});
-	return text.length > 0 ? text : undefined;
+		const text = response.output_text.trim();
+		log.debug("Received word meaning response", {
+			word,
+			language,
+			responseId: response.id,
+			status: response.status,
+			textLength: text.length,
+		});
+		return text.length > 0 ? text : undefined;
+	} catch (error) {
+		log.warn("Word meaning LLM failed; falling back to dictionary APIs", {
+			word,
+			language,
+			error,
+		});
+		return undefined;
+	}
 }
 
 export async function roastBadGuess(input: {
