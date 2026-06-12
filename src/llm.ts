@@ -153,11 +153,11 @@ export async function describeWordMeaning(
 	if (!openai) return undefined;
 	log.debug("Requesting word meaning", { word, language });
 
-	const prompt = `Write a single-sentence complete and concise meaning(s) of the word "${word}", using word's language.`;
+	const prompt = `In language ${language === "ru" ? "Russian" : "English"}, write a single short sentence explaining most common meaning of the word "${word}". After that, add a second single sentece with a fun fact about that word.`;
 	const response = await openai.responses.create({
 		...shortResponseOptions(),
 		instructions:
-			"Return only the requested sentence. Do not use markdown, labels, examples, or extra commentary.",
+			"Return only two requested sentences (description + fun fact). Do NOT use markdown, labels, examples, or extra commentary!",
 		input: prompt,
 	});
 
@@ -196,8 +196,8 @@ Rules:
 - Reply in the same language/alphabet as the guessed word.
 - Exactly one short sentence.
 - Sound like an annoyed friend in a group chat.
-- Make the joke about this exact word.
 - Joke must be sarcastic, non-flat, and not too obvious. It must be deep and smart, and it must roast the guesser.
+- You are strictly unallowed to use analogies or comparisons.
 - Do not mention scores, numbers, possible words, remaining words, averages, or quality.`;
 	const response = await openai.responses.create({
 		...shortResponseOptions(ROAST_OUTPUT_TOKENS),
