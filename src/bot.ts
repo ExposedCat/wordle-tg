@@ -27,6 +27,7 @@ export const COMMANDS = [
 	{ command: "personal", description: defaultText("command.personal") },
 	{ command: "daily", description: defaultText("command.daily") },
 	{ command: "w", description: defaultText("command.w") },
+	{ command: "explain", description: defaultText("command.explain") },
 	{ command: "length", description: defaultText("command.length") },
 	{ command: "auto", description: defaultText("command.auto") },
 	{ command: "cleanup", description: defaultText("command.cleanup") },

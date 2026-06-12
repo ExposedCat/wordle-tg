@@ -17,12 +17,14 @@ import {
 	setLanguage,
 	setWordLength,
 } from "../bot/handlers.ts";
+import { parseWordTarget } from "../bot/word-target.ts";
 import type { Context } from "../bot.ts";
 import {
 	emojiPackFromStickers,
 	packNameCandidates,
 } from "../game/emoji-pack.ts";
 import { saveSettings, settings } from "../game.ts";
+import { roastBadGuess } from "../llm.ts";
 
 export const preferenceComposer = new Composer<Context>();
 
@@ -60,6 +62,39 @@ preferenceComposer.command("cleanup", async (context) => {
 });
 
 preferenceComposer.command("roast", async (context) => {
+	const argument = (context.match ?? "").trim();
+	const reply = context.message?.reply_to_message;
+	const argumentTarget = argument ? parseWordTarget(argument) : null;
+	const replyTarget = argument
+		? null
+		: parseWordTarget(reply?.text, { allowGuessCommand: true });
+	const target = argumentTarget ?? replyTarget;
+
+	if (argument || reply) {
+		if (!target) return void (await context.text("game.roastUsage"));
+
+		const roast = await roastBadGuess({
+			playerName: context.from?.first_name ?? "Player",
+			word: target.word,
+			possibleCount: 0,
+			actualRemaining: 0,
+			averageRemaining: 0,
+		});
+		if (!roast) {
+			return void (await context.text("game.roastUnavailable", {
+				word: target.word.toUpperCase(),
+			}));
+		}
+
+		await context.reply(
+			roast,
+			replyTarget && reply
+				? { reply_parameters: { message_id: reply.message_id } }
+				: undefined,
+		);
+		return;
+	}
+
 	const chatSettings = await settings(context.chat.id);
 	chatSettings.roast = !chatSettings.roast;
 	await saveSettings(context.chat.id, chatSettings);

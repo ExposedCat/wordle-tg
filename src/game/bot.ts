@@ -15,6 +15,7 @@ import {
 	tournamentStatusHtml,
 	userRef,
 } from "../bot/handlers.ts";
+import { parseWordTarget } from "../bot/word-target.ts";
 import type { Context } from "../bot.ts";
 import {
 	acceptDuel,
@@ -185,6 +186,23 @@ gameComposer.command("w", async (context) => {
 		return void (await context.text("game.guessUsage", { length }));
 	}
 	await handleGuess(context, word);
+});
+
+gameComposer.command("explain", async (context) => {
+	const reply = context.message?.reply_to_message;
+	const target = parseWordTarget(reply?.text, { allowGuessCommand: true });
+	if (!reply || !target) return void (await context.text("game.explainUsage"));
+
+	const meaning = await wordMeaning(target.word, target.language);
+	if (!meaning) {
+		return void (await context.text("game.explainUnavailable", {
+			word: escapeHtml(target.word.toUpperCase()),
+		}));
+	}
+
+	await context.reply(meaning, {
+		reply_parameters: { message_id: reply.message_id },
+	});
 });
 
 gameComposer.command("board", async (context) => {

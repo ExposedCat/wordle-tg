@@ -3,10 +3,11 @@ command =
     .personal = Start your own game in this chat
     .daily = Start today's daily word
     .w = Guess the current word
+    .explain = Explain a replied word
     .length = Set word length
     .auto = Toggle bare-word guessing
     .cleanup = Toggle old board cleanup
-    .roast = Toggle roasts for bad guesses
+    .roast = Roast a word or toggle bad-guess roasts
     .board = Show the current board
     .stop = End the game or open tournament
     .profile = Your stats in this chat
@@ -75,6 +76,10 @@ game =
     .noActiveStop = No active game or tournament to give up.
     .dailyStopped = <tg-emoji emoji-id="5870734657384877785">🏳️</tg-emoji> Daily game stopped. The word stays hidden.
     .tournamentCancelled = <tg-emoji emoji-id="5870734657384877785">🏳️</tg-emoji> Tournament cancelled.
+    .explainUsage = Reply to a single word with /explain.
+    .explainUnavailable = Could not explain { $word } right now.
+    .roastUsage = Reply to a single word with /roast, or send /roast WORD.
+    .roastUnavailable = Could not roast { $word } right now.
     .noGameGuess = <tg-emoji emoji-id="5927052244254986343">❕</tg-emoji> No game running here. Send /wordle to start one!
     .notAllowed = <tg-emoji emoji-id="5924719252379537729">🤔</tg-emoji> "{ $word }" is not allowed.{ $rejectStatus }
     .creativityBlocked = <tg-emoji emoji-id="5872829476143894491">🚫</tg-emoji> Creativity mode: { $word } was used recently here. Try something fresh!{ $rejectStatus }
@@ -210,6 +215,9 @@ help =
         
         /w WORD
         Submits a guess.
+        
+        Reply to a word with /explain to get a meaning.
+        Reply with /roast, or send /roast WORD, to roast a word.
         
         /board
         Reposts the current board.
