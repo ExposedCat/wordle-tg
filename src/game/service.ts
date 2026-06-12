@@ -76,6 +76,7 @@ export type StartDailyGameOutcome =
 
 export interface GiveUpOutcome {
 	answer: string | null;
+	language: WordLanguage | null;
 	tournamentCancelled: boolean;
 	daily: boolean;
 }
@@ -591,7 +592,12 @@ export class GameService {
 				chatId,
 				tournamentId: t.id,
 			});
-			return { answer: null, tournamentCancelled: true, daily: false };
+			return {
+				answer: null,
+				language: null,
+				tournamentCancelled: true,
+				daily: false,
+			};
 		}
 		const daily = game.daily_date !== null;
 		game.status = daily ? "paused" : "lost";
@@ -620,7 +626,12 @@ export class GameService {
 				});
 			}
 		}
-		return { answer: daily ? null : game.answer, tournamentCancelled, daily };
+		return {
+			answer: daily ? null : game.answer,
+			language: daily ? null : game.language,
+			tournamentCancelled,
+			daily,
+		};
 	}
 
 	async submitGuess(

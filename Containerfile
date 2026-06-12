@@ -12,6 +12,7 @@ ENV DEBUG=app:*:warn,app:*:error
 COPY deno.json deno.lock ./
 COPY src ./src
 COPY data ./data
+COPY locales ./locales
 RUN deno cache --lock=deno.lock src/index.ts
 
 VOLUME /data

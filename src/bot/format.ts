@@ -1,3 +1,4 @@
+import type { TranslateFunction } from "@grammyjs/i18n";
 import type {
 	ChatSettings,
 	Difficulty,
@@ -15,79 +16,59 @@ import {
 	formatTileLetter,
 	type TileColor,
 } from "../render/emoji-pack.ts";
-
-const WORDLE_ICON = '<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji>';
-const ONESHOT_ICON = '<tg-emoji emoji-id="5936130851635990622">🎯</tg-emoji>';
-const CREATIVITY_ICON =
-	'<tg-emoji emoji-id="5877410604225924969">✨</tg-emoji>';
-const MULTIPLAYER_ICON =
-	'<tg-emoji emoji-id="5942877472163892475">👥</tg-emoji>';
-const DUELS_ICON = '<tg-emoji emoji-id="5944940516754853337">⚔️</tg-emoji>';
-const STATS_ICON = '<tg-emoji emoji-id="5778575233422200567">👤</tg-emoji>';
-const PREFERENCES_ICON =
-	'<tg-emoji emoji-id="5877260593903177342">⚙️</tg-emoji>';
-const LANGUAGE_ICON = '<tg-emoji emoji-id="5778184941154078090">🌐</tg-emoji>';
-const LENGTH_ICON = '<tg-emoji emoji-id="6008135256798927387">🏆</tg-emoji>';
-const GUESS_MODE_ICON =
-	'<tg-emoji emoji-id="6005695599410679642">🔠</tg-emoji>';
-const AUTO_ICON = '<tg-emoji emoji-id="5881986900469748194">🤖</tg-emoji>';
-const CLEANUP_ICON = '<tg-emoji emoji-id="5879937509579820068">🧹</tg-emoji>';
-const ROAST_ICON = '<tg-emoji emoji-id="5924666978332578279">🔥</tg-emoji>';
-const EMOJI_PACK_ICON =
-	'<tg-emoji emoji-id="5784982040432611567">😀</tg-emoji>';
-const SOURCE_CODE =
-	'<tg-emoji emoji-id="5884343982816759327">💻</tg-emoji> <a href="https://github.com/ExposedCat/wordle-tg">Source Code</a> (forked <a href="https://github.com/Argotoss/telewordle">telewordle</a>)';
-
+import { text as defaultText } from "./i18n.ts";
 export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
-	normal: "😎 normal",
-	hard: "😤 hard",
-	superhard: "🔥 super hard",
+	normal: defaultText("partial.difficultyNormal"),
+	hard: defaultText("partial.difficultyHard"),
+	superhard: defaultText("partial.difficultySuperhard"),
 };
 
 export const ONESHOT_DIFFICULTY_LABEL: Record<OneshotDifficulty, string> = {
-	easy: "easy",
-	normal: "normal",
-	hard: "hard",
-	expert: "expert",
+	easy: defaultText("partial.oneshotEasy"),
+	normal: defaultText("partial.oneshotNormal"),
+	hard: defaultText("partial.oneshotHard"),
+	expert: defaultText("partial.oneshotExpert"),
 };
 
-const TICK = '<tg-emoji emoji-id="5825794181183836432">✅</tg-emoji>';
-const FORBIDDEN = '<tg-emoji emoji-id="5872829476143894491">🚫</tg-emoji>';
-const A_YELLOW = '<tg-emoji emoji-id="5280718893806034581">🔠</tg-emoji>';
-const A_GREEN = '<tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji>';
-const A_DARK = '<tg-emoji emoji-id="5282737683053980256">🔠</tg-emoji>';
-const GAME_OVER = '<tg-emoji emoji-id="5927054181285237634">🏳️</tg-emoji>';
-const STATS_USER = '<tg-emoji emoji-id="5778575233422200567">👤</tg-emoji>';
-const STATS_GAMES = '<tg-emoji emoji-id="6008090211181923982">🎮</tg-emoji>';
-const STATS_GUESSES = '<tg-emoji emoji-id="6005695599410679642">🔠</tg-emoji>';
-const STATS_WINNING = '<tg-emoji emoji-id="6008135256798927387">🏆</tg-emoji>';
-const STATS_TOURNAMENTS =
-	'<tg-emoji emoji-id="5942877472163892475">👥</tg-emoji>';
-const STATS_DUELS = '<tg-emoji emoji-id="5944940516754853337">⚔️</tg-emoji>';
 const STATS_BAR_FILL = "■";
 const STATS_BAR_END = "◗";
-const NUMBER_LABELS = [
-	'<tg-emoji emoji-id="5794182096603847292">1️⃣</tg-emoji>',
-	'<tg-emoji emoji-id="5794303034292968945">2️⃣</tg-emoji>',
-	'<tg-emoji emoji-id="5794031944547178894">3️⃣</tg-emoji>',
-	'<tg-emoji emoji-id="5793901252987330401">4️⃣</tg-emoji>',
-	'<tg-emoji emoji-id="5794066823976592976">5️⃣</tg-emoji>',
-	'<tg-emoji emoji-id="5794235255414069703">6️⃣</tg-emoji>',
-];
 
 export function rankLabelHtml(rank: number): string {
-	return NUMBER_LABELS[rank - 1] ?? `${rank}.`;
+	switch (rank) {
+		case 1:
+			return '<tg-emoji emoji-id="5794182096603847292">1️⃣</tg-emoji>';
+		case 2:
+			return '<tg-emoji emoji-id="5794303034292968945">2️⃣</tg-emoji>';
+		case 3:
+			return '<tg-emoji emoji-id="5794031944547178894">3️⃣</tg-emoji>';
+		case 4:
+			return '<tg-emoji emoji-id="5793901252987330401">4️⃣</tg-emoji>';
+		case 5:
+			return '<tg-emoji emoji-id="5794066823976592976">5️⃣</tg-emoji>';
+		case 6:
+			return '<tg-emoji emoji-id="5794235255414069703">6️⃣</tg-emoji>';
+		default:
+			return `${rank}.`;
+	}
 }
 
-function onOff(enabled: boolean): string {
-	return enabled ? "on" : "off";
+function onOff(translate: TranslateFunction, enabled: boolean): string {
+	return translate(enabled ? "partial.on" : "partial.off");
 }
 
-function creativityValue(s: ChatSettings): string {
-	if (!s.creativity.configured || !s.creativity.enabled) return "off";
-	return s.creativity.mode === "time"
-		? `on, ${humanDuration(s.creativity.seconds)}`
-		: `on, ${s.creativity.count} words`;
+function creativityValue(
+	translate: TranslateFunction,
+	chatSettings: ChatSettings,
+): string {
+	if (!chatSettings.creativity.configured || !chatSettings.creativity.enabled)
+		return translate("partial.off");
+	return chatSettings.creativity.mode === "time"
+		? translate("format.creativityValueTime", {
+				duration: humanDuration(chatSettings.creativity.seconds),
+			})
+		: translate("format.creativityValueCount", {
+				count: chatSettings.creativity.count,
+			});
 }
 
 function oneshotPatternText(
@@ -103,101 +84,98 @@ function oneshotPatternText(
 	return parts.join(" + ");
 }
 
-function rejectedGuessesValue(s: ChatSettings): string {
-	return s.tournamentMaxFails === null ? "off" : `${s.tournamentMaxFails}`;
+function rejectedGuessesValue(
+	translate: TranslateFunction,
+	chatSettings: ChatSettings,
+): string {
+	return chatSettings.tournamentMaxFails === null
+		? translate("partial.off")
+		: `${chatSettings.tournamentMaxFails}`;
 }
 
-function timerValue(s: ChatSettings): string {
-	return s.tournamentTurnSeconds === null
-		? "off"
-		: humanTurnTime(s.tournamentTurnSeconds);
+function timerValue(
+	translate: TranslateFunction,
+	chatSettings: ChatSettings,
+): string {
+	return chatSettings.tournamentTurnSeconds === null
+		? translate("partial.off")
+		: humanTurnTime(chatSettings.tournamentTurnSeconds);
 }
 
-function emojiPackValue(s: ChatSettings): string {
-	return s.emojiPack?.name ?? "off";
+function emojiPackValue(
+	translate: TranslateFunction,
+	chatSettings: ChatSettings,
+): string {
+	return chatSettings.emojiPack?.name ?? translate("partial.off");
 }
 
-export function helpText(_s: ChatSettings): string {
-	return `${WORDLE_ICON} Wordle /wordle_help
-${ONESHOT_ICON} One-shot /oneshot_help
-${GUESS_MODE_ICON} Guess Mode /mode_help
-${CREATIVITY_ICON} Creativity /creativity_help
-${MULTIPLAYER_ICON} Multiplayer /multiplayer_help
-${STATS_ICON} Stats /stats_help
-${PREFERENCES_ICON} Preferences /preferences_help
-
-${SOURCE_CODE}`;
+export function helpText(
+	translate: TranslateFunction,
+	_chatSettings: ChatSettings,
+): string {
+	return translate("help.main", {
+		sourceCode: translate("format.sourceCode"),
+	});
 }
 
-export function describeCreativity(s: ChatSettings): string {
-	if (!s.creativity.configured)
-		return "off — set with /creativity 30m or /creativity 15w";
-	if (!s.creativity.enabled) return "off";
-	return s.creativity.mode === "time"
-		? `on — words from the last ${humanDuration(s.creativity.seconds)} are banned`
-		: `on — the last ${s.creativity.count} words are banned`;
+export function describeCreativity(
+	translate: TranslateFunction,
+	chatSettings: ChatSettings,
+): string {
+	if (!chatSettings.creativity.configured)
+		return translate("format.creativityUnset");
+	if (!chatSettings.creativity.enabled)
+		return translate("format.creativityOff");
+	return chatSettings.creativity.mode === "time"
+		? translate("format.creativityTime", {
+				duration: humanDuration(chatSettings.creativity.seconds),
+			})
+		: translate("format.creativityCount", {
+				count: chatSettings.creativity.count,
+			});
 }
 
 export function wordleHelpText(): string {
-	return `${WORDLE_ICON} Wordle
-
-/wordle
-Starts a shared chat game.
-
-/daily
-Starts today's shared daily word.
-
-/personal
-Starts your own game inside the chat.
-
-/w WORD
-Submits a guess.
-
-/board
-Reposts the current board.
-
-/stop
-Ends the current game.
-
-A chat can have one shared active game at a time. Personal games run separately for each player.`;
+	return defaultText("help.wordle");
 }
 
-export function oneshotHelpText(s: ChatSettings): string {
-	return `${ONESHOT_ICON} One-shot
-
-/oneshot easy|normal|hard|expert · ${ONESHOT_DIFFICULTY_LABEL[s.oneshotDifficulty]}
-Sets the chat's one-shot difficulty.
-
-/oneshot
-First row is a random clue word. You get one guess for row two.
-
-${lineTick(s.oneshotDifficulty === "easy")}easy · ${oneshotPatternText(2, 1, s.emojiPack)}
-${lineTick(s.oneshotDifficulty === "normal")}normal · ${oneshotPatternText(1, 2, s.emojiPack)}
-${lineTick(s.oneshotDifficulty === "hard")}hard · ${oneshotPatternText(1, 1, s.emojiPack)}
-${lineTick(s.oneshotDifficulty === "expert")}expert · ${oneshotPatternText(0, 2, s.emojiPack)}
-
-One-shot games do not affect stats.`;
+export function oneshotHelpText(
+	translate: TranslateFunction,
+	chatSettings: ChatSettings,
+): string {
+	return translate("help.oneshot", {
+		difficulty: ONESHOT_DIFFICULTY_LABEL[chatSettings.oneshotDifficulty],
+		easyTick: lineTick(chatSettings.oneshotDifficulty === "easy"),
+		normalTick: lineTick(chatSettings.oneshotDifficulty === "normal"),
+		hardTick: lineTick(chatSettings.oneshotDifficulty === "hard"),
+		expertTick: lineTick(chatSettings.oneshotDifficulty === "expert"),
+		easyPattern: oneshotPatternText(2, 1, chatSettings.emojiPack),
+		normalPattern: oneshotPatternText(1, 2, chatSettings.emojiPack),
+		hardPattern: oneshotPatternText(1, 1, chatSettings.emojiPack),
+		expertPattern: oneshotPatternText(0, 2, chatSettings.emojiPack),
+	});
 }
 
-export function modeHelpText(s: ChatSettings): string {
-	return `${GUESS_MODE_ICON} Guess Mode
-
-Normal /normal${tick(s.difficulty === "normal")}
-Classic Wordle experience.
-
-Hard /hard${tick(s.difficulty === "hard")}
-Each guess must use ${A_YELLOW} yellow and ${A_GREEN} green hints from previous guesses.
-
-Super-hard /superhard${tick(s.difficulty === "superhard")}
-Hard, but ${A_DARK} dark hints cannot be used.`;
+export function modeHelpText(
+	translate: TranslateFunction,
+	chatSettings: ChatSettings,
+): string {
+	return translate("help.mode", {
+		normalTick: tick(chatSettings.difficulty === "normal"),
+		hardTick: tick(chatSettings.difficulty === "hard"),
+		superhardTick: tick(chatSettings.difficulty === "superhard"),
+	});
 }
 
 export function hardModeViolationText(
+	translate: TranslateFunction,
 	violation: HardModeViolation,
 	superHard: boolean,
 	emojiPack: EmojiPackConfig | null,
 ): string {
-	const mode = superHard ? "Super-hard" : "Hard";
+	const mode = superHard
+		? translate("partial.superhard")
+		: translate("partial.hard");
 	const required = violation.required
 		.map((hint) => formatTileLetter(hint.letter, hint.color, emojiPack))
 		.join(" ");
@@ -206,12 +184,13 @@ export function hardModeViolationText(
 		.join(" ");
 
 	if (required && forbidden)
-		return `${mode}: you must use ${required}.\nYou cannot use ${forbidden}`;
-	if (required) return `${mode}: you must use ${required}`;
-	return `${mode}: you cannot use ${forbidden}`;
+		return translate("format.hardModeBoth", { mode, required, forbidden });
+	if (required) return translate("format.hardModeRequired", { mode, required });
+	return translate("format.hardModeForbidden", { mode, forbidden });
 }
 
 export function alreadyGuessedText(
+	translate: TranslateFunction,
 	word: string,
 	answer: string,
 	emojiPack: EmojiPackConfig | null,
@@ -222,15 +201,18 @@ export function alreadyGuessedText(
 		)
 		.join(" ");
 
-	return `${tiles} was already guessed`;
+	return translate("format.alreadyGuessed", { tiles });
 }
 
 export function wordMeaningSuffix(meaning?: string): string {
-	return meaning ? ` · ${meaning}` : "";
+	return meaning ? defaultText("format.wordMeaningSuffix", { meaning }) : "";
 }
 
 export function answerMeaningText(answer: string, meaning?: string): string {
-	return `${answer.toUpperCase()}${wordMeaningSuffix(meaning)}`;
+	return defaultText("format.answerMeaning", {
+		answer: answer.toUpperCase(),
+		meaning: wordMeaningSuffix(meaning),
+	});
 }
 
 export function answerMeaningSentence(
@@ -241,93 +223,90 @@ export function answerMeaningSentence(
 	return `${answerMeaningText(answer, meaning)}${suffix}`;
 }
 
-export function giveUpText(answer: string, meaning?: string): string {
-	return `${GAME_OVER} Game Over! The word was ${answerMeaningSentence(answer, meaning)}`;
+export function giveUpText(
+	translate: TranslateFunction,
+	answer: string,
+	meaning?: string,
+): string {
+	return translate("format.gameOver", {
+		answer: answerMeaningSentence(answer, meaning),
+	});
 }
 
-export function creativityHelpText(s: ChatSettings): string {
-	return `${CREATIVITY_ICON} Creativity
-
-/creativity · ${creativityValue(s)} ${toggleIcon(s.creativity.enabled)}
-Turns creativity on or off using the saved frame.
-
-/creativity 30m · ${s.creativity.configured && s.creativity.mode === "time" ? humanDuration(s.creativity.seconds) : "time frame"}${tick(s.creativity.configured && s.creativity.mode === "time")}
-Bans words used within a time window. Supports s, m, h, d.
-
-/creativity 15w · ${s.creativity.configured && s.creativity.mode === "count" ? `${s.creativity.count} words` : "word frame"}${tick(s.creativity.configured && s.creativity.mode === "count")}
-Bans the last N used words.`;
+export function creativityHelpText(
+	translate: TranslateFunction,
+	chatSettings: ChatSettings,
+): string {
+	return translate("help.creativity", {
+		value: creativityValue(translate, chatSettings),
+		toggleIcon: toggleIcon(chatSettings.creativity.enabled),
+		timeValue:
+			chatSettings.creativity.configured &&
+			chatSettings.creativity.mode === "time"
+				? humanDuration(chatSettings.creativity.seconds)
+				: translate("partial.timeFrame"),
+		timeTick: tick(
+			chatSettings.creativity.configured &&
+				chatSettings.creativity.mode === "time",
+		),
+		wordValue:
+			chatSettings.creativity.configured &&
+			chatSettings.creativity.mode === "count"
+				? translate("format.creativityValueCount", {
+						count: chatSettings.creativity.count,
+					})
+				: translate("partial.wordFrame"),
+		wordTick: tick(
+			chatSettings.creativity.configured &&
+				chatSettings.creativity.mode === "count",
+		),
+	});
 }
 
-export function multiplayerHelpText(s: ChatSettings): string {
-	return `${MULTIPLAYER_ICON} Multiplayer
-
-${MULTIPLAYER_ICON} Tournaments
-/round [N]
-Players join with the button, then the creator starts it.
-Players guess in turn order. Solving earlier gives more points.
-
-/fails N|off · ${rejectedGuessesValue(s)}
-Sets rejected guesses allowed per turn.
-
-/timer 90s · ${timerValue(s)}
-Sets a max time per turn. Send /timer with no value to disable it.
-
-${DUELS_ICON} Duels
-/duel
-Both players get the same word in private chat.
-Fewest guesses wins; speed breaks ties.`;
+export function multiplayerHelpText(
+	translate: TranslateFunction,
+	chatSettings: ChatSettings,
+): string {
+	return translate("help.multiplayer", {
+		rejectedGuesses: rejectedGuessesValue(translate, chatSettings),
+		timer: timerValue(translate, chatSettings),
+	});
 }
 
-export function statsHelpText(): string {
-	return `${STATS_ICON} Stats
-
-/profile
-Shows your stats in this chat.
-
-/global
-Shows your stats across all chats.
-
-/compare
-Compares you with another player.
-
-Use /compare by replying to a player, or /compare NAME.
-One-shot games do not affect stats.`;
+export function statsHelpText(translate: TranslateFunction): string {
+	return translate("help.stats");
 }
 
-export function preferencesHelpText(s: ChatSettings): string {
-	return `${PREFERENCES_ICON} Chat Preferences
-
-${LANGUAGE_ICON} /en /ru · ${LANGUAGE_LABELS[s.language]}
-Changes language for new games.
-
-${LENGTH_ICON} /length N · ${s.wordLength} letters
-Changes word length for new games.
-
-${AUTO_ICON} /auto · ${onOff(s.bareWord)}
-Toggles guessing without /w.
-
-${CLEANUP_ICON} /cleanup · ${onOff(s.cleanup)}
-Removes previous unsolved board messages when a new board is posted.
-
-${ROAST_ICON} /roast · ${onOff(s.roast)}
-Toggles one LLM roast for below-average guesses.
-
-${EMOJI_PACK_ICON} /usepack NAME · ${emojiPackValue(s)}
-Uses a custom emoji pack for tile letters.
-
-Active games keep the language and length they started with.`;
+export function preferencesHelpText(
+	translate: TranslateFunction,
+	chatSettings: ChatSettings,
+): string {
+	return translate("help.preferences", {
+		language: LANGUAGE_LABELS[chatSettings.language],
+		length: chatSettings.wordLength,
+		auto: onOff(translate, chatSettings.bareWord),
+		cleanup: onOff(translate, chatSettings.cleanup),
+		roast: onOff(translate, chatSettings.roast),
+		emojiPack: emojiPackValue(translate, chatSettings),
+	});
 }
 
 function tick(enabled: boolean): string {
-	return enabled ? ` ${TICK}` : "";
+	return enabled
+		? ' <tg-emoji emoji-id="5825794181183836432">✅</tg-emoji>'
+		: "";
 }
 
 function lineTick(enabled: boolean): string {
-	return enabled ? `${TICK} ` : "";
+	return enabled
+		? '<tg-emoji emoji-id="5825794181183836432">✅</tg-emoji> '
+		: "";
 }
 
 function toggleIcon(enabled: boolean): string {
-	return enabled ? TICK : FORBIDDEN;
+	return enabled
+		? '<tg-emoji emoji-id="5825794181183836432">✅</tg-emoji>'
+		: '<tg-emoji emoji-id="5872829476143894491">🚫</tg-emoji>';
 }
 
 function tileStatusColor(status: TileStatus): TileColor {
@@ -358,9 +337,9 @@ export function parseTournamentTimerValue(input: string): number | null {
 		.toLowerCase()
 		.match(/^(\d+)\s*(s|sec|secs|seconds?|m|min|mins|minutes?)$/);
 	if (!time) return null;
-	const n = parseInt(time[1], 10);
-	if (n <= 0) return null;
-	return time[2][0] === "m" ? n * 60 : n;
+	const parsedAmount = parseInt(time[1], 10);
+	if (parsedAmount <= 0) return null;
+	return time[2][0] === "m" ? parsedAmount * 60 : parsedAmount;
 }
 
 /** Parse "30m", "2h", "90s", "1d" → seconds; or "15w" / "15 words" → word count. */
@@ -370,19 +349,19 @@ export function parseCreativityValue(
 	const trimmed = input.trim().toLowerCase();
 	const words = trimmed.match(/^(\d+)\s*(words?|w)$/);
 	if (words) {
-		const n = parseInt(words[1], 10);
-		return n > 0 ? { count: n } : null;
+		const parsedCount = parseInt(words[1], 10);
+		return parsedCount > 0 ? { count: parsedCount } : null;
 	}
 	const time = trimmed.match(
 		/^(\d+)\s*(s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|d|days?)$/,
 	);
 	if (time) {
-		const n = parseInt(time[1], 10);
-		if (n <= 0) return null;
+		const parsedAmount = parseInt(time[1], 10);
+		if (parsedAmount <= 0) return null;
 		const unit = time[2][0];
-		const mult =
+		const multiplier =
 			unit === "s" ? 1 : unit === "m" ? 60 : unit === "h" ? 3600 : 86400;
-		return { seconds: n * mult };
+		return { seconds: parsedAmount * multiplier };
 	}
 	return null;
 }
@@ -391,18 +370,21 @@ function percent(part: number, total: number): number {
 	return total ? Math.round((100 * part) / total) : 0;
 }
 
-function avgLeftText(s: StatsRow): string {
-	if (!s.guess_quality_count) return "n/a";
+function avgLeftText(statistics: StatsRow): string {
+	if (!statistics.guess_quality_count) return defaultText("partial.na");
 	const avg =
-		Math.round((s.guess_expected_remaining_sum / s.guess_quality_count) * 10) /
-		10;
+		Math.round(
+			(statistics.guess_expected_remaining_sum /
+				statistics.guess_quality_count) *
+				10,
+		) / 10;
 	return avg.toString();
 }
 
-function qualityScoreText(s: StatsRow): string {
-	if (!s.guess_quality_count) return "n/a";
+function qualityScoreText(statistics: StatsRow): string {
+	if (!statistics.guess_quality_count) return defaultText("partial.na");
 	return Math.round(
-		s.guess_quality_points_sum / s.guess_quality_count,
+		statistics.guess_quality_points_sum / statistics.guess_quality_count,
 	).toString();
 }
 
@@ -418,62 +400,86 @@ function winningLine(label: string, count: number, maxCount: number): string {
 }
 
 export function statsText(
-	s: StatsRow,
+	translate: TranslateFunction,
+	statistics: StatsRow,
 	displayName: string,
 	chatName: string,
 ): string {
-	const totalLetters = s.guesses_total * DEFAULT_WORD_LENGTH;
+	const totalLetters = statistics.guesses_total * DEFAULT_WORD_LENGTH;
 	const maxDist = Math.max(
-		s.dist1,
-		s.dist2,
-		s.dist3,
-		s.dist4,
-		s.dist5,
-		s.dist6,
+		statistics.dist1,
+		statistics.dist2,
+		statistics.dist3,
+		statistics.dist4,
+		statistics.dist5,
+		statistics.dist6,
 	);
 
-	return `${STATS_USER} ${escapeHtml(displayName)} · ${escapeHtml(chatName)}
-
-${STATS_GAMES} Games
-${s.games_played} total · ${s.games_won} won (${percent(s.games_won, s.games_played)}%) · ${s.solves} finished (${percent(s.solves, s.games_played)}% / ${percent(s.solves, s.games_won)}%)
-${s.current_streak} in a row · max ${s.best_streak}
-
-${STATS_GUESSES} Guesses
-${s.guesses_total} guesses · ${A_YELLOW} ${s.yellows} (${percent(s.yellows, s.guesses_total)}% / ${percent(s.yellows, totalLetters)}%) · ${A_GREEN} ${s.greens} (${percent(s.greens, s.guesses_total)}% / ${percent(s.greens, totalLetters)}%)
-${qualityScoreText(s)}/100 quality score · ${avgLeftText(s)} words left on average
-
-${STATS_WINNING} Winning
-${winningLine(rankLabelHtml(1), s.dist1, maxDist)}
-${winningLine(rankLabelHtml(2), s.dist2, maxDist)}
-${winningLine(rankLabelHtml(3), s.dist3, maxDist)}
-${winningLine(rankLabelHtml(4), s.dist4, maxDist)}
-${winningLine(rankLabelHtml(5), s.dist5, maxDist)}
-${winningLine(rankLabelHtml(6), s.dist6, maxDist)}
-
-${STATS_TOURNAMENTS} Tournaments
-${s.tournaments_played} total · ${s.tournaments_won} won (${percent(s.tournaments_won, s.tournaments_played)}%) · ${s.tournament_points} points
-
-${STATS_DUELS} Duels
-${s.duels_played} total · ${s.duels_won} won (${percent(s.duels_won, s.duels_played)}%)`;
+	return translate("format.stats", {
+		displayName: escapeHtml(displayName),
+		chatName: escapeHtml(chatName),
+		gamesPlayed: statistics.games_played,
+		gamesWon: statistics.games_won,
+		gamesWonPercent: percent(statistics.games_won, statistics.games_played),
+		solves: statistics.solves,
+		solvesPlayedPercent: percent(statistics.solves, statistics.games_played),
+		solvesWonPercent: percent(statistics.solves, statistics.games_won),
+		currentStreak: statistics.current_streak,
+		bestStreak: statistics.best_streak,
+		guessesTotal: statistics.guesses_total,
+		yellows: statistics.yellows,
+		yellowsGuessPercent: percent(statistics.yellows, statistics.guesses_total),
+		yellowsLetterPercent: percent(statistics.yellows, totalLetters),
+		greens: statistics.greens,
+		greensGuessPercent: percent(statistics.greens, statistics.guesses_total),
+		greensLetterPercent: percent(statistics.greens, totalLetters),
+		qualityScore: qualityScoreText(statistics),
+		avgLeft: avgLeftText(statistics),
+		dist1: winningLine(rankLabelHtml(1), statistics.dist1, maxDist),
+		dist2: winningLine(rankLabelHtml(2), statistics.dist2, maxDist),
+		dist3: winningLine(rankLabelHtml(3), statistics.dist3, maxDist),
+		dist4: winningLine(rankLabelHtml(4), statistics.dist4, maxDist),
+		dist5: winningLine(rankLabelHtml(5), statistics.dist5, maxDist),
+		dist6: winningLine(rankLabelHtml(6), statistics.dist6, maxDist),
+		tournamentsPlayed: statistics.tournaments_played,
+		tournamentsWon: statistics.tournaments_won,
+		tournamentsWonPercent: percent(
+			statistics.tournaments_won,
+			statistics.tournaments_played,
+		),
+		tournamentPoints: statistics.tournament_points,
+		duelsPlayed: statistics.duels_played,
+		duelsWon: statistics.duels_won,
+		duelsWonPercent: percent(statistics.duels_won, statistics.duels_played),
+	});
 }
 
 export function humanMs(ms: number): string {
-	const sec = Math.round(ms / 1000);
-	if (sec < 60) return `${sec}s`;
-	const min = Math.floor(sec / 60);
-	return `${min}m ${sec % 60}s`;
+	const roundedSeconds = Math.round(ms / 1000);
+	if (roundedSeconds < 60) return `${roundedSeconds}s`;
+	const minutes = Math.floor(roundedSeconds / 60);
+	return `${minutes}m ${roundedSeconds % 60}s`;
 }
 
-export function standingsText(t: TournamentRow): string {
-	const rows = [...t.players]
-		.map((p) => ({ p, pts: t.scores[String(p.userId)] ?? 0 }))
-		.sort((a, b) => b.pts - a.pts)
-		.map((r, i) => `${rankLabelHtml(i + 1)} ${r.p.userName} — ${r.pts} pts`);
+export function standingsText(tournament: TournamentRow): string {
+	const rows = [...tournament.players]
+		.map((player) => ({
+			player,
+			points: tournament.scores[String(player.userId)] ?? 0,
+		}))
+		.sort((left, right) => right.points - left.points)
+		.map((standing, index) =>
+			defaultText("format.standingsPoints", {
+				rank: rankLabelHtml(index + 1),
+				player: standing.player.userName,
+				points: standing.points,
+			}),
+		);
 	return rows.join("\n");
 }
 
-export function turnOrderText(t: TournamentRow): string {
-	return roundOrder(t.players, t.current_round)
-		.map((p) => p.userName)
+export function turnOrderText(tournament: TournamentRow): string {
+	return roundOrder(tournament.players, tournament.current_round)
+		.map((player) => player.userName)
 		.join(" → ");
 }

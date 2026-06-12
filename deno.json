@@ -11,6 +11,7 @@
 		"@db/sqlite": "jsr:@db/sqlite@^0.13.0",
 		"@gfx/canvas": "jsr:@gfx/canvas@^0.5.8",
 		"@grammyjs/debug": "jsr:@grammyjs/debug@^0.2.1",
+		"@grammyjs/i18n": "https://deno.land/x/grammy_i18n@v1.1.0/mod.ts",
 		"@kysely/kysely": "jsr:@kysely/kysely@0.28.17",
 		"@marshift/kysely-deno-sqlite3": "jsr:@marshift/kysely-deno-sqlite3@^1.0.0",
 		"@openai/openai": "jsr:@openai/openai@^6.42.0",
