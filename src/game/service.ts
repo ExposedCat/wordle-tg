@@ -133,8 +133,6 @@ function logGuessQuality(input: {
   guessNumber: number;
   quality?: GuessQuality;
 }): void {
-  if (process.env.NODE_ENV === 'test') return;
-
   const base = {
     chatId: input.chatId,
     gameId: input.game.id,
