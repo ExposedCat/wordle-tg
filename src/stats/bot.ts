@@ -1,15 +1,15 @@
 import { Composer, InputFile } from "grammy";
-import type { Context } from "../../bot.ts";
-import { findStatsByName, globalStatsFor, statsFor } from "../../game/api.ts";
-import { renderCompareSticker } from "../../render/image.ts";
-import { statsText } from "../format.ts";
 import {
 	chatDisplayName,
 	telegramUserDisplayName,
 	threadOptions,
 	userAvatar,
 	userRef,
-} from "../handlers.ts";
+} from "../bot/handlers.ts";
+import type { Context } from "../bot.ts";
+import { findStatsByName, globalStatsFor, statsFor } from "../game.ts";
+import { renderCompareSticker } from "./compare-sticker.ts";
+import { statsText } from "./format.ts";
 
 export const statsComposer = new Composer<Context>();
 

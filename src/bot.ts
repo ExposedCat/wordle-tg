@@ -1,15 +1,15 @@
 import type { I18nFlavor, TranslationVariables } from "@grammyjs/i18n";
 import { Bot, type Context as GrammyContext } from "grammy";
 import { sequentialize } from "grammy_runner";
-import { gameComposer } from "./bot/features/game.ts";
-import { preferenceComposer } from "./bot/features/preferences.ts";
-import { statsComposer } from "./bot/features/stats.ts";
-import { tournamentComposer } from "./bot/features/tournament.ts";
+import type { Database } from "./app/data.ts";
 import { restoreActiveTournamentTimers } from "./bot/handlers.ts";
 import { text as defaultText, i18n } from "./bot/i18n.ts";
-import type { Database } from "./db.ts";
-import { initGame } from "./game/api.ts";
+import { gameComposer } from "./game/bot.ts";
+import { initGame } from "./game.ts";
 import { createLogger } from "./log.ts";
+import { preferenceComposer } from "./preferences/bot.ts";
+import { statsComposer } from "./stats/bot.ts";
+import { tournamentComposer } from "./tournament/bot.ts";
 
 type TextReply = (
 	key: string,

@@ -1,11 +1,11 @@
-import type { Database, TournamentRow } from "../db.ts";
-import type { WordLanguage } from "../engine/language.ts";
+import type { Database, TournamentRow } from "./app/data.ts";
+import type { WordLanguage } from "./game/language.ts";
 import {
 	GameService,
 	type OneshotPuzzle,
 	type StartDailyGameOutcome,
 	type UserRef,
-} from "./service.ts";
+} from "./game/service.ts";
 
 let service: GameService | null = null;
 

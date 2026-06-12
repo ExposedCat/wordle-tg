@@ -1,14 +1,21 @@
 import { type Bot, InputFile } from "grammy";
+import type { GameRow, TournamentRow } from "../app/data.ts";
 import type { Context } from "../bot.ts";
-import { BOT_TOKEN } from "../config.ts";
-import type { GameRow, TournamentRow } from "../db.ts";
-import type { GuessQuality } from "../engine/guess-quality.ts";
+import {
+	renderBoardSticker,
+	renderKeyboardSticker,
+} from "../game/board-image.ts";
+import { escapeHtml } from "../game/emoji-pack.ts";
+import { MAX_GUESSES, maxGuessesForGame } from "../game/guess.ts";
+import type { GuessQuality } from "../game/guess-quality.ts";
 import {
 	LANGUAGE_LABELS,
 	MAX_WORD_LENGTH,
 	MIN_WORD_LENGTH,
 	type WordLanguage,
-} from "../engine/language.ts";
+} from "../game/language.ts";
+import { wordMeaning } from "../game/meaning.ts";
+import type { TournamentRejectStatus, UserRef } from "../game/service.ts";
 import {
 	activeGame,
 	activePersonalGame,
@@ -23,18 +30,19 @@ import {
 	saveSettings,
 	setWordLength as saveWordLength,
 	submitGuess,
-} from "../game/api.ts";
-import {
-	MAX_GUESSES,
-	maxGuessesForGame,
-	roundOrder,
-	type TournamentRejectStatus,
-	type UserRef,
-} from "../game/service.ts";
-import { describeWordMeaning, hasOpenAIKey, roastBadGuess } from "../llm.ts";
+} from "../game.ts";
+import { hasOpenAIKey, roastBadGuess } from "../llm.ts";
 import { createLogger } from "../log.ts";
-import { escapeHtml } from "../render/emoji-pack.ts";
-import { renderBoardSticker, renderKeyboardSticker } from "../render/image.ts";
+import {
+	currentTournamentPlayer,
+	playerMentionHtml,
+	playerNameLinkHtml,
+	tournamentRejectStatusHtml,
+	tournamentStandingsHtml,
+	tournamentStatusHtml,
+	tournamentTimerExpiredHtml,
+	tournamentTimerReminderHtml,
+} from "../tournament/view.ts";
 import {
 	alreadyGuessedText,
 	answerMeaningSentence,
@@ -42,25 +50,34 @@ import {
 	hardModeViolationText,
 	helpText,
 	humanMs,
-	humanTurnTime,
-	rankLabelHtml,
 } from "./format.ts";
 import { text as defaultText } from "./i18n.ts";
+import {
+	messageThreadId,
+	storedThreadOptions,
+	threadOptions,
+	userRef,
+} from "./telegram.ts";
+
+export {
+	lobbyKeyboard,
+	lobbyText,
+	type StyledInlineKeyboard,
+	tournamentStandingsHtml,
+	tournamentStatusHtml,
+} from "../tournament/view.ts";
+export {
+	chatDisplayName,
+	messageThreadId,
+	telegramUserDisplayName,
+	threadOptions,
+	userAvatar,
+	userRef,
+} from "./telegram.ts";
 
 const log = createLogger("bot");
 
 type BotApi = Bot<Context>["api"];
-
-type StyledInlineButton = {
-	text: string;
-	callback_data: string;
-	style: "success" | "primary" | "danger";
-	icon_custom_emoji_id: string;
-};
-
-export type StyledInlineKeyboard = {
-	inline_keyboard: StyledInlineButton[][];
-};
 
 export type StateMessageOptions = {
 	headerHtml?: string;
@@ -83,191 +100,6 @@ export function boardMessageIdsForCleanup(
 	return game.status === "solved" ? [] : messageIds;
 }
 
-export function userRef(context: Context): UserRef {
-	const telegramUser = context.from!;
-	const name =
-		[telegramUser.first_name, telegramUser.last_name]
-			.filter(Boolean)
-			.join(" ") ||
-		telegramUser.username ||
-		context.t("partial.player");
-	return {
-		id: telegramUser.id,
-		name,
-		username: telegramUser.username,
-		firstName: telegramUser.first_name || telegramUser.username || "Player",
-	};
-}
-
-export function telegramUserDisplayName(user: {
-	first_name: string;
-	last_name?: string;
-	username?: string;
-}): string {
-	return (
-		[user.first_name, user.last_name].filter(Boolean).join(" ") ||
-		user.username ||
-		"Player"
-	);
-}
-
-export function chatDisplayName(context: Context): string {
-	const chat = context.chat;
-	if (!chat) return context.t("partial.chat");
-	if ("title" in chat && chat.title) return chat.title;
-	if ("username" in chat && chat.username) return `@${chat.username}`;
-	if ("first_name" in chat)
-		return (
-			[chat.first_name, chat.last_name].filter(Boolean).join(" ") ||
-			context.t("partial.privateChat")
-		);
-	return context.t("partial.chat");
-}
-
-function playerMentionHtml(player: {
-	userId: number;
-	userName: string;
-	username?: string;
-	firstName?: string;
-}): string {
-	if (player.username) return `@${player.username}`;
-	const label = escapeHtml(player.firstName || player.userName);
-	return `<a href="tg://user?id=${player.userId}">${label}</a>`;
-}
-
-function playerNameLinkHtml(player: {
-	userId: number;
-	userName: string;
-	firstName?: string;
-}): string {
-	const label = escapeHtml(player.firstName || player.userName);
-	return `<a href="tg://user?id=${player.userId}">${label}</a>`;
-}
-
-export function tournamentStandingsHtml(tournament: TournamentRow): string {
-	return [...tournament.players]
-		.map((player) => ({
-			player,
-			points: tournament.scores[String(player.userId)] ?? 0,
-		}))
-		.sort((left, right) => right.points - left.points)
-		.map(
-			(standing, index) =>
-				`${rankLabelHtml(index + 1)} ${playerNameLinkHtml(standing.player)} · ${standing.points}`,
-		)
-		.join("\n");
-}
-
-function roundLabelHtml(tournament: TournamentRow): string {
-	return defaultText("tournament.roundStatus", {
-		round: tournament.current_round,
-		rounds: tournament.rounds,
-		standings: tournamentStandingsHtml(tournament),
-	});
-}
-
-function currentTournamentPlayer(tournament: TournamentRow) {
-	const turnOrder = roundOrder(tournament.players, tournament.current_round);
-	return turnOrder[tournament.turn_idx % turnOrder.length];
-}
-
-export function tournamentStatusHtml(tournament: TournamentRow): string {
-	return defaultText("tournament.status", {
-		roundLabel: roundLabelHtml(tournament),
-		player: playerMentionHtml(currentTournamentPlayer(tournament)),
-	});
-}
-
-function tournamentRejectStatusHtml(status?: TournamentRejectStatus): string {
-	if (!status) return "";
-	const remaining = defaultText("tournament.rejectRemaining", {
-		remaining: status.remaining,
-		limit: status.limit,
-	});
-	if (!status.forfeit) return remaining;
-	return defaultText("tournament.rejectForfeit", {
-		remaining,
-		player: playerNameLinkHtml(status.forfeitedPlayer),
-		limit: status.limit,
-		nextPlayer: playerMentionHtml(status.forfeit.nextPlayer),
-	});
-}
-
-function tournamentTimerReminderHtml(
-	player: TournamentRow["players"][number],
-	secondsLeft: number,
-): string {
-	return defaultText("tournament.timerReminder", {
-		player: playerNameLinkHtml(player),
-		time: humanTurnTime(secondsLeft),
-	});
-}
-
-function tournamentTimerExpiredHtml(
-	expiredPlayer: TournamentRow["players"][number],
-	nextPlayer: TournamentRow["players"][number],
-): string {
-	return defaultText("tournament.timerExpired", {
-		player: playerNameLinkHtml(expiredPlayer),
-		nextPlayer: playerMentionHtml(nextPlayer),
-	});
-}
-
-export function messageThreadId(context: Context): number | undefined {
-	const message = context.message ?? context.callbackQuery?.message;
-	const threadId = (message as { message_thread_id?: unknown } | undefined)
-		?.message_thread_id;
-	return typeof threadId === "number" ? threadId : undefined;
-}
-
-export function threadOptions(context: Context): {
-	message_thread_id?: number;
-} {
-	const threadId = messageThreadId(context);
-	return threadId === undefined ? {} : { message_thread_id: threadId };
-}
-
-export async function userAvatar(
-	context: Context,
-	userId: number,
-): Promise<Uint8Array | undefined> {
-	try {
-		const photos = await context.api.getUserProfilePhotos(userId, { limit: 1 });
-		const photo = photos.photos[0]?.at(-1);
-		if (!photo) return undefined;
-
-		const file = await context.api.getFile(photo.file_id);
-		if (!file.file_path) return undefined;
-
-		const path = file.file_path.split("/").map(encodeURIComponent).join("/");
-		const response = await fetch(
-			`https://api.telegram.org/file/bot${BOT_TOKEN}/${path}`,
-		);
-		if (!response.ok) return undefined;
-		return new Uint8Array(await response.arrayBuffer());
-	} catch {
-		return undefined;
-	}
-}
-
-function storedThreadOptions(threadId: number | null): {
-	message_thread_id?: number;
-} {
-	return threadId === null ? {} : { message_thread_id: threadId };
-}
-
-export async function wordMeaning(
-	word: string,
-	language: WordLanguage,
-): Promise<string | undefined> {
-	try {
-		return await describeWordMeaning(word, language);
-	} catch (error) {
-		log.error("Failed to generate word meaning", { error });
-		return undefined;
-	}
-}
-
 function isBelowAverageQuality(
 	quality?: GuessQuality,
 ): quality is GuessQuality {
@@ -276,48 +108,6 @@ function isBelowAverageQuality(
 		quality.possibleCount > 0 &&
 		quality.actualRemaining > quality.averageRemaining
 	);
-}
-
-export function lobbyText(tournament: TournamentRow): string {
-	const names =
-		tournament.players.length > 0
-			? tournament.players.map(playerNameLinkHtml).join(", ")
-			: defaultText("partial.noPlayers");
-	const rounds = tournament.rounds > 0 ? ` · ${tournament.rounds}` : "";
-	return defaultText("tournament.lobby", {
-		players: names,
-		rounds,
-		maxGuesses: MAX_GUESSES,
-	});
-}
-
-export function lobbyKeyboard(tournament: TournamentRow): StyledInlineKeyboard {
-	return {
-		inline_keyboard: [
-			[
-				{
-					text: defaultText("tournament.buttonJoin"),
-					callback_data: `t:join:${tournament.id}`,
-					style: "success",
-					icon_custom_emoji_id: "5920090136627908485",
-				},
-				{
-					text: defaultText("tournament.buttonStart"),
-					callback_data: `t:start:${tournament.id}`,
-					style: "primary",
-					icon_custom_emoji_id: "5994378304751145264",
-				},
-			],
-			[
-				{
-					text: defaultText("tournament.buttonQuit"),
-					callback_data: `t:quit:${tournament.id}`,
-					style: "danger",
-					icon_custom_emoji_id: "5922712343011135025",
-				},
-			],
-		],
-	};
 }
 
 const scheduledTimerEvents = new Set<string>();

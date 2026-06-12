@@ -1,11 +1,7 @@
-import type { GameRow } from "../db.ts";
-import { LANGUAGE_KEY_ROWS } from "../engine/language.ts";
-import {
-	keyboardStatus,
-	scoreGuess,
-	type TileStatus,
-} from "../engine/score.ts";
-import { maxGuessesForGame } from "../game/service.ts";
+import type { GameRow } from "../app/data.ts";
+import { maxGuessesForGame } from "./guess.ts";
+import { LANGUAGE_KEY_ROWS } from "./language.ts";
+import { keyboardStatus, scoreGuess, type TileStatus } from "./score.ts";
 
 const EMOJI: Record<TileStatus, string> = {
 	correct: "\u{1F7E9}", // 🟩

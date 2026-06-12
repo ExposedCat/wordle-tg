@@ -1,7 +1,7 @@
 import { run } from "grammy_runner";
+import { initDatabase } from "./app/data.ts";
 import { COMMANDS, initBot } from "./bot.ts";
 import { assertConfig, BOT_TOKEN, DB_PATH } from "./config.ts";
-import { initDatabase } from "./db.ts";
 import { createLogger } from "./log.ts";
 
 const log = createLogger("main");

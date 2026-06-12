@@ -1,10 +1,4 @@
 import { Composer } from "grammy";
-import type { Context } from "../../bot.ts";
-import { saveSettings, settings } from "../../game/api.ts";
-import {
-	emojiPackFromStickers,
-	packNameCandidates,
-} from "../../render/emoji-pack.ts";
 import {
 	creativityHelpText,
 	humanDuration,
@@ -14,7 +8,7 @@ import {
 	parseCreativityValue,
 	preferencesHelpText,
 	statsHelpText,
-} from "../format.ts";
+} from "../bot/format.ts";
 import {
 	autoGuessInstruction,
 	expectedGuessLength,
@@ -22,7 +16,13 @@ import {
 	setDifficulty,
 	setLanguage,
 	setWordLength,
-} from "../handlers.ts";
+} from "../bot/handlers.ts";
+import type { Context } from "../bot.ts";
+import {
+	emojiPackFromStickers,
+	packNameCandidates,
+} from "../game/emoji-pack.ts";
+import { saveSettings, settings } from "../game.ts";
 
 export const preferenceComposer = new Composer<Context>();
 

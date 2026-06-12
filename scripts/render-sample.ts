@@ -1,12 +1,12 @@
 // Renders sample boards to /tmp and prints the text-mode equivalent, so the
 // visual output can be checked without a Telegram token.
-import type { GameRow } from "../src/db.ts";
+import type { GameRow } from "../src/app/data.ts";
 import {
 	renderBoardImage,
 	renderBoardSticker,
 	renderKeyboardSticker,
-} from "../src/render/image.ts";
-import { textBoard } from "../src/render/text.ts";
+} from "../src/game/board-image.ts";
+import { textBoard } from "../src/game/text-board.ts";
 
 const mk = (word: string, userId: number, userName: string) => ({
 	word,

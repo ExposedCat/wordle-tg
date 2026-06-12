@@ -1,22 +1,6 @@
 import { Composer } from "grammy";
-import type { Context } from "../../bot.ts";
-import type { OneshotDifficulty } from "../../db.ts";
-import { isGuessText } from "../../engine/language.ts";
-import {
-	acceptDuel,
-	activeGame,
-	giveUp,
-	openTournament,
-	setOneshotDifficulty,
-	settings,
-	startDailyGame,
-	startGame,
-	startOneshot,
-	startPersonalGame,
-} from "../../game/api.ts";
-import { createLogger } from "../../log.ts";
-import { escapeHtml } from "../../render/emoji-pack.ts";
-import { giveUpText } from "../format.ts";
+import type { OneshotDifficulty } from "../app/data.ts";
+import { giveUpText } from "../bot/format.ts";
 import {
 	activePersonalTarget,
 	expectedGuessLength,
@@ -30,8 +14,24 @@ import {
 	sendBoard,
 	tournamentStatusHtml,
 	userRef,
-	wordMeaning,
-} from "../handlers.ts";
+} from "../bot/handlers.ts";
+import type { Context } from "../bot.ts";
+import {
+	acceptDuel,
+	activeGame,
+	giveUp,
+	openTournament,
+	setOneshotDifficulty,
+	settings,
+	startDailyGame,
+	startGame,
+	startOneshot,
+	startPersonalGame,
+} from "../game.ts";
+import { createLogger } from "../log.ts";
+import { escapeHtml } from "./emoji-pack.ts";
+import { isGuessText } from "./language.ts";
+import { wordMeaning } from "./meaning.ts";
 
 const ONESHOT_DIFFICULTIES: OneshotDifficulty[] = [
 	"easy",

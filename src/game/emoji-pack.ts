@@ -1,6 +1,6 @@
-import type { GameRow } from "../db.ts";
-import { LANGUAGE_KEY_ROWS } from "../engine/language.ts";
-import { type KeyStatus, keyboardStatus } from "../engine/score.ts";
+import type { GameRow } from "../app/data.ts";
+import { LANGUAGE_KEY_ROWS } from "./language.ts";
+import { type KeyStatus, keyboardStatus } from "./score.ts";
 
 export type TileColor = "gray" | "yellow" | "green" | "dark-gray";
 export type TileKey = `${string}-${TileColor}`;

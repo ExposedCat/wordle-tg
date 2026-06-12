@@ -1,6 +1,6 @@
 import OpenAI from "@openai/openai";
 import { OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL } from "./config.ts";
-import type { WordLanguage } from "./engine/language.ts";
+import type { WordLanguage } from "./game/language.ts";
 import { createLogger } from "./log.ts";
 
 const log = createLogger("llm");

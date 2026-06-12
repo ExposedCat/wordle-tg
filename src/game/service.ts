@@ -1,5 +1,4 @@
 import {
-	bumpStats,
 	type ChatSettings,
 	createDuel,
 	createGame,
@@ -14,7 +13,6 @@ import {
 	getActiveTournaments,
 	getBoardMessageIds,
 	getCompletedDailyGame,
-	getDailyWord,
 	getDuel,
 	getGlobalStats,
 	getOpenTournament,
@@ -28,36 +26,37 @@ import {
 	recentWords,
 	recordUsedWord,
 	saveBoardMessageIds,
-	saveDailyWord,
 	saveSettings,
 	type TournamentPlayer,
 	type TournamentRow,
 	updateDuel,
 	updateGame,
 	updateTournament,
-} from "../db.ts";
-import { type GuessQuality, guessQuality } from "../engine/guess-quality.ts";
-import {
-	type HardModeViolation,
-	hardModeViolation,
-} from "../engine/hardmode.ts";
-import {
-	DEFAULT_WORD_LENGTH,
-	isLanguageWord,
-	isSupportedWordLength,
-	type WordLanguage,
-} from "../engine/language.ts";
-import { scoreGuess, type TileStatus } from "../engine/score.ts";
-import {
-	answersForLanguage,
-	isValidWord,
-	pickAnswer,
-} from "../engine/words.ts";
+} from "../app/data.ts";
 import { createLogger } from "../log.ts";
+import {
+	applyDuelStats,
+	applyGameEndStats,
+	applyGuessStats,
+	applyTournamentStats,
+} from "../stats/apply.ts";
+import {
+	nextTurnStartedAt,
+	pointsForGuessNumber,
+	roundOrder,
+	tournamentWinners,
+} from "../tournament/rules.ts";
+import { dailyAnswer, dateKey } from "./daily.ts";
+import { duelWinner } from "./duel.ts";
+import { maxGuessesForGame } from "./guess.ts";
+import { type GuessQuality, guessQuality } from "./guess-quality.ts";
+import { type HardModeViolation, hardModeViolation } from "./hardmode.ts";
+import { isSupportedWordLength, type WordLanguage } from "./language.ts";
+import { buildOneshotPuzzle, impossibleOneshotTarget } from "./oneshot.ts";
+import { scoreGuess, type TileStatus } from "./score.ts";
+import { answersForLanguage, isValidWord, pickAnswer } from "./words.ts";
 
 const log = createLogger("game");
-
-export const MAX_GUESSES = 6;
 
 export interface UserRef {
 	id: number;
@@ -89,71 +88,8 @@ export interface OneshotPuzzle {
 	score: TileStatus[];
 }
 
-/** Turn order for a given 1-based round: players rotated left by (round - 1). */
-export function roundOrder(
-	players: TournamentPlayer[],
-	round: number,
-): TournamentPlayer[] {
-	const k = (round - 1) % players.length;
-	return [...players.slice(k), ...players.slice(0, k)];
-}
-
-export function pointsForGuessNumber(n: number): number {
-	return MAX_GUESSES + 1 - n; // guess #1 → 6 pts … guess #6 → 1 pt
-}
-
-export function maxGuessesForGame(game: GameRow): number {
-	return game.kind === "oneshot" ? 2 : MAX_GUESSES;
-}
-
 function roundedQualityValue(n: number): number {
 	return Math.round(n * 100) / 100;
-}
-
-function nextTurnStartedAt(previous: number | null): number {
-	const now = Date.now();
-	return previous === null ? now : Math.max(now, previous + 1);
-}
-
-const ONESHOT_TARGETS: Record<
-	OneshotDifficulty,
-	{ correct: number; present: number }
-> = {
-	easy: { correct: 2, present: 1 },
-	normal: { correct: 1, present: 2 },
-	hard: { correct: 1, present: 1 },
-	expert: { correct: 0, present: 2 },
-};
-
-function randomItem<T>(items: readonly T[]): T {
-	return items[Math.floor(Math.random() * items.length)];
-}
-
-function shuffled<T>(items: readonly T[]): T[] {
-	const copy = [...items];
-	for (let i = copy.length - 1; i > 0; i--) {
-		const j = Math.floor(Math.random() * (i + 1));
-		[copy[i], copy[j]] = [copy[j], copy[i]];
-	}
-	return copy;
-}
-
-function scoreMatchesTarget(
-	score: TileStatus[],
-	target: { correct: number; present: number },
-): boolean {
-	return (
-		score.filter((s) => s === "correct").length === target.correct &&
-		score.filter((s) => s === "present").length === target.present
-	);
-}
-
-function impossibleOneshotTarget(
-	length: number,
-	target: { correct: number; present: number },
-): boolean {
-	if (target.correct + target.present > length) return true;
-	return target.correct === length - 1 && target.present > 0;
 }
 
 function logGuessQuality(input: {
@@ -243,38 +179,6 @@ export type GuessOutcome =
 			};
 			duel?: { d: DuelRow; finished: boolean; bothDone: boolean };
 	  };
-
-function dateKey(date: Date): string {
-	const year = date.getFullYear();
-	const month = String(date.getMonth() + 1).padStart(2, "0");
-	const day = String(date.getDate()).padStart(2, "0");
-	return `${year}-${month}-${day}`;
-}
-
-async function fetchNytWordleAnswer(
-	date: string,
-	fetchImpl: FetchLike,
-): Promise<string> {
-	const url = `https://www.nytimes.com/svc/wordle/v2/${date}.json`;
-	log.debug("Fetching NYT daily Wordle", { date, url });
-	const response = await fetchImpl(url);
-	if (!response.ok)
-		throw new Error(
-			`NYT Wordle fetch failed: ${response.status} ${response.statusText}`,
-		);
-
-	const payload = (await response.json()) as { solution?: unknown };
-	const solution =
-		typeof payload.solution === "string"
-			? payload.solution.trim().toLowerCase()
-			: "";
-	if (!isLanguageWord(solution, "en", DEFAULT_WORD_LENGTH)) {
-		throw new Error(
-			"NYT Wordle response did not include a valid 5-letter solution",
-		);
-	}
-	return solution;
-}
 
 export class GameService {
 	private readonly fetchImpl: FetchLike;
@@ -410,8 +314,9 @@ export class GameService {
 		}
 		const settings = await getSettings(this.db, chatId);
 		const words = answersForLanguage(settings.language, settings.wordLength);
-		const target = ONESHOT_TARGETS[settings.oneshotDifficulty];
-		if (impossibleOneshotTarget(settings.wordLength, target)) {
+		if (
+			impossibleOneshotTarget(settings.wordLength, settings.oneshotDifficulty)
+		) {
 			log.warn("Start oneshot blocked by impossible target", {
 				chatId,
 				wordLength: settings.wordLength,
@@ -420,25 +325,18 @@ export class GameService {
 			return null;
 		}
 
-		for (const opener of shuffled(words)) {
-			const candidates = words.filter(
-				(answer) =>
-					answer !== opener &&
-					scoreMatchesTarget(scoreGuess(answer, opener), target),
-			);
-			if (!candidates.length) continue;
-
-			const answer = randomItem(candidates);
+		const puzzle = buildOneshotPuzzle(words, settings.oneshotDifficulty);
+		if (puzzle) {
 			const now = Date.now();
 			const game = await createGame(
 				this.db,
 				chatId,
-				answer,
+				puzzle.answer,
 				settings.language,
 				"oneshot",
 			);
 			game.guesses.push({
-				word: opener,
+				word: puzzle.opener,
 				userId: 0,
 				userName: "One-shot",
 				ts: now,
@@ -453,11 +351,11 @@ export class GameService {
 			});
 
 			return {
-				mode: settings.oneshotDifficulty,
+				mode: puzzle.mode,
 				game: (await getActiveGame(this.db, chatId))!,
-				opener,
-				answer,
-				score: scoreGuess(answer, opener),
+				opener: puzzle.opener,
+				answer: puzzle.answer,
+				score: puzzle.score,
 			};
 		}
 
@@ -562,7 +460,7 @@ export class GameService {
 			return { type: "resumed", game: (await getActiveGame(this.db, chatId))! };
 		}
 
-		const answer = await this.dailyAnswer(date, language);
+		const answer = await dailyAnswer(this.db, date, language, this.fetchImpl);
 		const game = await createGame(this.db, chatId, answer, language, "normal", {
 			dailyDate: date,
 		});
@@ -831,9 +729,9 @@ export class GameService {
 				guessNumber,
 			);
 		} else if (!isOneshot) {
-			await this.applyGuessStats(chatId, user, score, quality!);
+			await applyGuessStats(this.db, chatId, user, score, quality!);
 			if (solved || lost)
-				await this.applyGameEndStats(chatId, game, solved, guessNumber);
+				await applyGameEndStats(this.db, chatId, game, solved, guessNumber);
 			if (tournament && tournament.status === "active") {
 				outcome.tournament = await this.advanceTournament(
 					tournament,
@@ -1077,26 +975,6 @@ export class GameService {
 		return game;
 	}
 
-	private async dailyAnswer(
-		date: string,
-		language: WordLanguage,
-	): Promise<string> {
-		const existing = await getDailyWord(this.db, date, language);
-		if (existing) {
-			log.debug("Daily answer cache hit", { date, language });
-			return existing.word;
-		}
-
-		const answer =
-			language === "en"
-				? await fetchNytWordleAnswer(date, this.fetchImpl)
-				: pickAnswer("ru", DEFAULT_WORD_LENGTH);
-
-		await saveDailyWord(this.db, date, language, answer);
-		log.debug("Saved daily answer", { date, language });
-		return (await getDailyWord(this.db, date, language))?.word ?? answer;
-	}
-
 	private async recordTournamentRejectedAttempt(
 		t: TournamentRow,
 		currentPlayer: TournamentPlayer,
@@ -1181,9 +1059,9 @@ export class GameService {
 			if (t.current_round >= t.rounds) {
 				t.status = "done";
 				tournamentEnded = true;
-				winners = this.tournamentWinners(t);
+				winners = tournamentWinners(t);
 				await updateTournament(this.db, t);
-				await this.applyTournamentStats(t, winners);
+				await applyTournamentStats(this.db, t, winners);
 				log.debug("Tournament finished", {
 					chatId: t.chat_id,
 					tournamentId: t.id,
@@ -1225,26 +1103,6 @@ export class GameService {
 			nextPlayer,
 			winners,
 		};
-	}
-
-	tournamentWinners(t: TournamentRow): TournamentPlayer[] {
-		const max = Math.max(
-			...t.players.map((p) => t.scores[String(p.userId)] ?? 0),
-		);
-		return t.players.filter((p) => (t.scores[String(p.userId)] ?? 0) === max);
-	}
-
-	private async applyTournamentStats(
-		t: TournamentRow,
-		winners: TournamentPlayer[],
-	): Promise<void> {
-		for (const p of t.players) {
-			await bumpStats(this.db, t.chat_id, p.userId, p.userName, {
-				tournaments_played: 1,
-				tournaments_won: winners.some((w) => w.userId === p.userId) ? 1 : 0,
-				tournament_points: t.scores[String(p.userId)] ?? 0,
-			});
-		}
 	}
 
 	// ---------- duels ----------
@@ -1403,7 +1261,7 @@ export class GameService {
 				d.opponent.guesses !== null;
 			if (bothDone) {
 				d.status = "done";
-				await this.applyDuelStats(d);
+				await applyDuelStats(this.db, d);
 				log.debug("Duel finished", {
 					chatId: d.chat_id,
 					duelId: d.id,
@@ -1424,84 +1282,8 @@ export class GameService {
 		return { d, finished: false, bothDone: false };
 	}
 
-	/** Lower guess count wins (must have solved); tie on guesses → faster time wins; full tie → draw. */
 	duelWinner(d: DuelRow): DuelPlayerResult | "draw" | null {
-		if (
-			!d.opponent ||
-			d.challenger.guesses === null ||
-			d.opponent.guesses === null
-		)
-			return null;
-		const a = d.challenger;
-		const b = d.opponent;
-		if (a.solved && !b.solved) return a;
-		if (b.solved && !a.solved) return b;
-		if (!a.solved && !b.solved) return "draw";
-		if (a.guesses! !== b.guesses!) return a.guesses! < b.guesses! ? a : b;
-		if (a.ms! !== b.ms!) return a.ms! < b.ms! ? a : b;
-		return "draw";
-	}
-
-	private async applyDuelStats(d: DuelRow): Promise<void> {
-		const winner = this.duelWinner(d);
-		for (const p of [d.challenger, d.opponent!]) {
-			await bumpStats(this.db, d.chat_id, p.userId, p.userName, {
-				duels_played: 1,
-				duels_won: winner !== "draw" && winner?.userId === p.userId ? 1 : 0,
-			});
-		}
-	}
-
-	// ---------- stats ----------
-
-	private async applyGuessStats(
-		chatId: number,
-		user: UserRef,
-		score: TileStatus[],
-		quality: GuessQuality,
-	): Promise<void> {
-		await bumpStats(this.db, chatId, user.id, user.name, {
-			guesses_total: 1,
-			guess_quality_count: quality.possibleCount > 0 ? 1 : 0,
-			guess_expected_remaining_sum: quality.actualRemaining,
-			guess_quality_points_sum: quality.points,
-			greens: score.filter((s) => s === "correct").length,
-			yellows: score.filter((s) => s === "present").length,
-		});
-	}
-
-	private async applyGameEndStats(
-		chatId: number,
-		game: GameRow,
-		solved: boolean,
-		guessNumber: number,
-	): Promise<void> {
-		const participants = new Map<number, string>();
-		for (const g of game.guesses) participants.set(g.userId, g.userName);
-		const solver = solved ? game.guesses[game.guesses.length - 1] : null;
-
-		for (const [userId, name] of participants) {
-			const prev = (await this.statsFor(chatId, userId)).current_streak;
-			await bumpStats(
-				this.db,
-				chatId,
-				userId,
-				name,
-				{ games_played: 1, games_won: solved ? 1 : 0 },
-				{ setCurrentStreak: solved ? prev + 1 : 0 },
-			);
-		}
-		if (solver) {
-			const distKey = `dist${guessNumber}` as "dist1";
-			await bumpStats(
-				this.db,
-				chatId,
-				solver.userId,
-				solver.userName,
-				{ solves: 1, [distKey]: 1 },
-				{ fastestMs: (game.finished_at ?? Date.now()) - game.started_at },
-			);
-		}
+		return duelWinner(d);
 	}
 
 	statsFor(chatId: number, userId: number) {

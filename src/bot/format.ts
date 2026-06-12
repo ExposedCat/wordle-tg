@@ -3,20 +3,21 @@ import type {
 	ChatSettings,
 	Difficulty,
 	OneshotDifficulty,
-	StatsRow,
-	TournamentRow,
-} from "../db.ts";
-import type { HardModeViolation } from "../engine/hardmode.ts";
-import { DEFAULT_WORD_LENGTH, LANGUAGE_LABELS } from "../engine/language.ts";
-import { scoreGuess, type TileStatus } from "../engine/score.ts";
-import { roundOrder } from "../game/service.ts";
+} from "../app/data.ts";
 import {
 	type EmojiPackConfig,
-	escapeHtml,
 	formatTileLetter,
 	type TileColor,
-} from "../render/emoji-pack.ts";
+} from "../game/emoji-pack.ts";
+import type { HardModeViolation } from "../game/hardmode.ts";
+import { LANGUAGE_LABELS } from "../game/language.ts";
+import { scoreGuess, type TileStatus } from "../game/score.ts";
 import { text as defaultText } from "./i18n.ts";
+
+export { statsText } from "../stats/format.ts";
+export { standingsText, turnOrderText } from "../tournament/format.ts";
+export { rankLabelHtml } from "./rank.ts";
+
 export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
 	normal: defaultText("partial.difficultyNormal"),
 	hard: defaultText("partial.difficultyHard"),
@@ -29,28 +30,6 @@ export const ONESHOT_DIFFICULTY_LABEL: Record<OneshotDifficulty, string> = {
 	hard: defaultText("partial.oneshotHard"),
 	expert: defaultText("partial.oneshotExpert"),
 };
-
-const STATS_BAR_FILL = "■";
-const STATS_BAR_END = "◗";
-
-export function rankLabelHtml(rank: number): string {
-	switch (rank) {
-		case 1:
-			return '<tg-emoji emoji-id="5794182096603847292">1️⃣</tg-emoji>';
-		case 2:
-			return '<tg-emoji emoji-id="5794303034292968945">2️⃣</tg-emoji>';
-		case 3:
-			return '<tg-emoji emoji-id="5794031944547178894">3️⃣</tg-emoji>';
-		case 4:
-			return '<tg-emoji emoji-id="5793901252987330401">4️⃣</tg-emoji>';
-		case 5:
-			return '<tg-emoji emoji-id="5794066823976592976">5️⃣</tg-emoji>';
-		case 6:
-			return '<tg-emoji emoji-id="5794235255414069703">6️⃣</tg-emoji>';
-		default:
-			return `${rank}.`;
-	}
-}
 
 function onOff(translate: TranslateFunction, enabled: boolean): string {
 	return translate(enabled ? "partial.on" : "partial.off");
@@ -366,120 +345,9 @@ export function parseCreativityValue(
 	return null;
 }
 
-function percent(part: number, total: number): number {
-	return total ? Math.round((100 * part) / total) : 0;
-}
-
-function avgLeftText(statistics: StatsRow): string {
-	if (!statistics.guess_quality_count) return defaultText("partial.na");
-	const avg =
-		Math.round(
-			(statistics.guess_expected_remaining_sum /
-				statistics.guess_quality_count) *
-				10,
-		) / 10;
-	return avg.toString();
-}
-
-function qualityScoreText(statistics: StatsRow): string {
-	if (!statistics.guess_quality_count) return defaultText("partial.na");
-	return Math.round(
-		statistics.guess_quality_points_sum / statistics.guess_quality_count,
-	).toString();
-}
-
-function winningBar(count: number, maxCount: number): string {
-	if (!count || !maxCount) return "";
-	const units = Math.max(1, Math.round((count / maxCount) * 5));
-	return `${STATS_BAR_FILL.repeat(Math.min(5, units))}${STATS_BAR_END}`;
-}
-
-function winningLine(label: string, count: number, maxCount: number): string {
-	const bar = winningBar(count, maxCount);
-	return bar ? `${label} ${bar}` : `${label}`;
-}
-
-export function statsText(
-	translate: TranslateFunction,
-	statistics: StatsRow,
-	displayName: string,
-	chatName: string,
-): string {
-	const totalLetters = statistics.guesses_total * DEFAULT_WORD_LENGTH;
-	const maxDist = Math.max(
-		statistics.dist1,
-		statistics.dist2,
-		statistics.dist3,
-		statistics.dist4,
-		statistics.dist5,
-		statistics.dist6,
-	);
-
-	return translate("format.stats", {
-		displayName: escapeHtml(displayName),
-		chatName: escapeHtml(chatName),
-		gamesPlayed: statistics.games_played,
-		gamesWon: statistics.games_won,
-		gamesWonPercent: percent(statistics.games_won, statistics.games_played),
-		solves: statistics.solves,
-		solvesPlayedPercent: percent(statistics.solves, statistics.games_played),
-		solvesWonPercent: percent(statistics.solves, statistics.games_won),
-		currentStreak: statistics.current_streak,
-		bestStreak: statistics.best_streak,
-		guessesTotal: statistics.guesses_total,
-		yellows: statistics.yellows,
-		yellowsGuessPercent: percent(statistics.yellows, statistics.guesses_total),
-		yellowsLetterPercent: percent(statistics.yellows, totalLetters),
-		greens: statistics.greens,
-		greensGuessPercent: percent(statistics.greens, statistics.guesses_total),
-		greensLetterPercent: percent(statistics.greens, totalLetters),
-		qualityScore: qualityScoreText(statistics),
-		avgLeft: avgLeftText(statistics),
-		dist1: winningLine(rankLabelHtml(1), statistics.dist1, maxDist),
-		dist2: winningLine(rankLabelHtml(2), statistics.dist2, maxDist),
-		dist3: winningLine(rankLabelHtml(3), statistics.dist3, maxDist),
-		dist4: winningLine(rankLabelHtml(4), statistics.dist4, maxDist),
-		dist5: winningLine(rankLabelHtml(5), statistics.dist5, maxDist),
-		dist6: winningLine(rankLabelHtml(6), statistics.dist6, maxDist),
-		tournamentsPlayed: statistics.tournaments_played,
-		tournamentsWon: statistics.tournaments_won,
-		tournamentsWonPercent: percent(
-			statistics.tournaments_won,
-			statistics.tournaments_played,
-		),
-		tournamentPoints: statistics.tournament_points,
-		duelsPlayed: statistics.duels_played,
-		duelsWon: statistics.duels_won,
-		duelsWonPercent: percent(statistics.duels_won, statistics.duels_played),
-	});
-}
-
 export function humanMs(ms: number): string {
 	const roundedSeconds = Math.round(ms / 1000);
 	if (roundedSeconds < 60) return `${roundedSeconds}s`;
 	const minutes = Math.floor(roundedSeconds / 60);
 	return `${minutes}m ${roundedSeconds % 60}s`;
-}
-
-export function standingsText(tournament: TournamentRow): string {
-	const rows = [...tournament.players]
-		.map((player) => ({
-			player,
-			points: tournament.scores[String(player.userId)] ?? 0,
-		}))
-		.sort((left, right) => right.points - left.points)
-		.map((standing, index) =>
-			defaultText("format.standingsPoints", {
-				rank: rankLabelHtml(index + 1),
-				player: standing.player.userName,
-				points: standing.points,
-			}),
-		);
-	return rows.join("\n");
-}
-
-export function turnOrderText(tournament: TournamentRow): string {
-	return roundOrder(tournament.players, tournament.current_round)
-		.map((player) => player.userName)
-		.join(" → ");
 }

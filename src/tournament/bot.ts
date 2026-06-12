@@ -1,5 +1,13 @@
 import { Composer, InlineKeyboard } from "grammy";
-import type { Context } from "../../bot.ts";
+import { humanTurnTime, parseTournamentTimerValue } from "../bot/format.ts";
+import {
+	messageThreadId,
+	scheduleTournamentTimers,
+	sendBoard,
+	userRef,
+} from "../bot/handlers.ts";
+import type { Context } from "../bot.ts";
+import { MAX_GUESSES } from "../game/guess.ts";
 import {
 	activeGame,
 	createDuel,
@@ -11,19 +19,13 @@ import {
 	saveSettings,
 	settings,
 	startTournament,
-} from "../../game/api.ts";
-import { MAX_GUESSES } from "../../game/service.ts";
-import { humanTurnTime, parseTournamentTimerValue } from "../format.ts";
+} from "../game.ts";
 import {
 	lobbyKeyboard,
 	lobbyText,
-	messageThreadId,
-	scheduleTournamentTimers,
-	sendBoard,
 	tournamentStandingsHtml,
 	tournamentStatusHtml,
-	userRef,
-} from "../handlers.ts";
+} from "./view.ts";
 
 export const tournamentComposer = new Composer<Context>();
 
