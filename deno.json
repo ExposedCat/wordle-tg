@@ -2,9 +2,9 @@
 	"tasks": {
 		"format": "deno run -A @biomejs/biome format --write; deno run -A @biomejs/biome lint --write",
 		"dev": "./dev.sh",
-		"start": "deno run -INERSW --allow-ffi --unstable-ffi src/index.ts",
-		"check": "deno run -A @biomejs/biome check && deno check -I --unstable-ffi src/index.ts scripts/render-sample.ts",
-		"render:sample": "deno run -INERSW --allow-ffi --unstable-ffi scripts/render-sample.ts"
+		"start": "deno run --allow-import=deno.land:443,jsr.io:443,cdn.skypack.dev:443 -NERSW --allow-ffi --unstable-ffi src/index.ts",
+		"check": "deno run -A @biomejs/biome check && deno check --allow-import=deno.land:443,jsr.io:443,cdn.skypack.dev:443 --unstable-ffi src/index.ts scripts/render-sample.ts",
+		"render:sample": "deno run --allow-import=deno.land:443,jsr.io:443,cdn.skypack.dev:443 -NERSW --allow-ffi --unstable-ffi scripts/render-sample.ts"
 	},
 	"imports": {
 		"@biomejs/biome": "npm:@biomejs/biome@2.3.8",

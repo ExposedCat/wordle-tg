@@ -13,7 +13,7 @@ COPY deno.json deno.lock ./
 COPY src ./src
 COPY data ./data
 COPY locales ./locales
-RUN deno cache --lock=deno.lock src/index.ts
+RUN deno cache --lock=deno.lock --allow-import=deno.land:443,jsr.io:443,cdn.skypack.dev:443 src/index.ts
 
 VOLUME /data
 CMD ["deno", "task", "start"]
