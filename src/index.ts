@@ -1,58 +1,61 @@
-import { Bot } from 'grammy';
-import { registerHandlers } from './bot/handlers.js';
-import { BOT_TOKEN, DB_PATH, assertConfig } from './config.js';
-import { openDb } from './db.js';
-
-assertConfig();
-
-const db = openDb(DB_PATH);
-const bot = new Bot(BOT_TOKEN);
-
-registerHandlers(bot, db);
-
-bot.catch((err) => {
-  console.error('Bot error:', err.error);
-});
+import { Bot } from "grammy";
+import { registerHandlers } from "./bot/handlers.ts";
+import { assertConfig, BOT_TOKEN, DB_PATH } from "./config.ts";
+import { openDb } from "./db.ts";
 
 const COMMANDS = [
-  { command: 'wordle', description: 'Start a new game' },
-  { command: 'personal', description: 'Start your own game in this chat' },
-  { command: 'daily', description: "Start today's daily word" },
-  { command: 'w', description: 'Guess the current word' },
-  { command: 'length', description: 'Set word length' },
-  { command: 'auto', description: 'Toggle bare-word guessing' },
-  { command: 'cleanup', description: 'Toggle old board cleanup' },
-  { command: 'roast', description: 'Toggle roasts for bad guesses' },
-  { command: 'board', description: 'Show the current board' },
-  { command: 'stop', description: 'End the game or open tournament' },
-  { command: 'profile', description: 'Your stats in this chat' },
-  { command: 'compare', description: 'Compare stats with another player' },
-  { command: 'global', description: 'Your stats across all chats' },
-  { command: 'round', description: 'Start a turn-based tournament' },
-  { command: 'fails', description: 'Set tournament rejected-guess limit' },
-  { command: 'timer', description: 'Set tournament turn timer' },
-  { command: 'duel', description: 'Duel a friend' },
-  { command: 'usepack', description: 'Use an existing custom emoji pack' },
-  { command: 'creativity', description: 'Toggle or configure recent-word bans' },
-  { command: 'normal', description: 'Set normal mode' },
-  { command: 'hard', description: 'Set hard mode' },
-  { command: 'superhard', description: 'Set super hard mode' },
-  { command: 'mode_help', description: 'Mode details' },
-  { command: 'creativity_help', description: 'Creativity details' },
-  { command: 'settings', description: 'Chat settings' },
-  { command: 'help', description: 'How to play' },
+	{ command: "wordle", description: "Start a new game" },
+	{ command: "personal", description: "Start your own game in this chat" },
+	{ command: "daily", description: "Start today's daily word" },
+	{ command: "w", description: "Guess the current word" },
+	{ command: "length", description: "Set word length" },
+	{ command: "auto", description: "Toggle bare-word guessing" },
+	{ command: "cleanup", description: "Toggle old board cleanup" },
+	{ command: "roast", description: "Toggle roasts for bad guesses" },
+	{ command: "board", description: "Show the current board" },
+	{ command: "stop", description: "End the game or open tournament" },
+	{ command: "profile", description: "Your stats in this chat" },
+	{ command: "compare", description: "Compare stats with another player" },
+	{ command: "global", description: "Your stats across all chats" },
+	{ command: "round", description: "Start a turn-based tournament" },
+	{ command: "fails", description: "Set tournament rejected-guess limit" },
+	{ command: "timer", description: "Set tournament turn timer" },
+	{ command: "duel", description: "Duel a friend" },
+	{ command: "usepack", description: "Use an existing custom emoji pack" },
+	{
+		command: "creativity",
+		description: "Toggle or configure recent-word bans",
+	},
+	{ command: "normal", description: "Set normal mode" },
+	{ command: "hard", description: "Set hard mode" },
+	{ command: "superhard", description: "Set super hard mode" },
+	{ command: "mode_help", description: "Mode details" },
+	{ command: "creativity_help", description: "Creativity details" },
+	{ command: "settings", description: "Chat settings" },
+	{ command: "help", description: "How to play" },
 ];
 
 async function main(): Promise<void> {
-  await bot.api.setMyCommands(COMMANDS);
-  console.log('telewordle is running (long polling). Press Ctrl+C to stop.');
-  await bot.start();
+	assertConfig();
+
+	const db = openDb(DB_PATH);
+	const bot = new Bot(BOT_TOKEN);
+
+	registerHandlers(bot, db);
+
+	bot.catch((err) => {
+		console.error("Bot error:", err.error);
+	});
+
+	Deno.addSignalListener("SIGINT", () => bot.stop());
+	Deno.addSignalListener("SIGTERM", () => bot.stop());
+
+	await bot.api.setMyCommands(COMMANDS);
+	console.log("telewordle is running (long polling). Press Ctrl+C to stop.");
+	await bot.start();
 }
 
-process.once('SIGINT', () => bot.stop());
-process.once('SIGTERM', () => bot.stop());
-
 main().catch((e) => {
-  console.error(e);
-  process.exit(1);
+	console.error(e);
+	Deno.exit(1);
 });

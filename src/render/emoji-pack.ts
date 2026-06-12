@@ -1,140 +1,178 @@
-import type { GameRow } from '../db.js';
-import { LANGUAGE_KEY_ROWS } from '../engine/language.js';
-import { KeyStatus, keyboardStatus } from '../engine/score.js';
+import type { GameRow } from "../db.ts";
+import { LANGUAGE_KEY_ROWS } from "../engine/language.ts";
+import { type KeyStatus, keyboardStatus } from "../engine/score.ts";
 
-export type TileColor = 'gray' | 'yellow' | 'green' | 'dark-gray';
+export type TileColor = "gray" | "yellow" | "green" | "dark-gray";
 export type TileKey = `${string}-${TileColor}`;
 
 export interface EmojiPackConfig {
-  name: string;
-  tiles: Record<TileKey, string>;
+	name: string;
+	tiles: Record<TileKey, string>;
 }
 
 type CustomEmojiSticker = {
-  custom_emoji_id?: string;
+	custom_emoji_id?: string;
 };
 
-export const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-export const COLORS: TileColor[] = ['gray', 'yellow', 'green', 'dark-gray'];
-export const EMPTY_TILE_KEY: TileKey = 'empty-dark-gray';
-export const FALLBACK_EMOJI = '🔠';
+export const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+export const COLORS: TileColor[] = ["gray", "yellow", "green", "dark-gray"];
+export const EMPTY_TILE_KEY: TileKey = "empty-dark-gray";
+export const FALLBACK_EMOJI = "🔠";
 
 export function tileKey(letter: string, color: TileColor): TileKey {
-  return `${letter.toUpperCase()}-${color}`;
+	return `${letter.toUpperCase()}-${color}`;
 }
 
 export function orderedTileKeys(): TileKey[] {
-  return [...LETTERS.flatMap((letter) => COLORS.map((color) => tileKey(letter, color))), EMPTY_TILE_KEY];
+	return [
+		...LETTERS.flatMap((letter) =>
+			COLORS.map((color) => tileKey(letter, color)),
+		),
+		EMPTY_TILE_KEY,
+	];
 }
 
-export function emojiPackFromStickers(name: string, stickers: CustomEmojiSticker[]): EmojiPackConfig {
-  const keys = orderedTileKeys();
-  if (stickers.length !== keys.length) {
-    throw new Error(`Expected ${keys.length} emoji, got ${stickers.length}.`);
-  }
+export function emojiPackFromStickers(
+	name: string,
+	stickers: CustomEmojiSticker[],
+): EmojiPackConfig {
+	const keys = orderedTileKeys();
+	if (stickers.length !== keys.length) {
+		throw new Error(`Expected ${keys.length} emoji, got ${stickers.length}.`);
+	}
 
-  const tiles: Record<TileKey, string> = {};
-  for (const [index, key] of keys.entries()) {
-    const id = stickers[index].custom_emoji_id;
-    if (id === undefined) {
-      throw new Error(`Sticker ${index + 1} is missing custom_emoji_id.`);
-    }
-    tiles[key] = id;
-  }
+	const tiles: Record<TileKey, string> = {};
+	for (const [index, key] of keys.entries()) {
+		const id = stickers[index].custom_emoji_id;
+		if (id === undefined) {
+			throw new Error(`Sticker ${index + 1} is missing custom_emoji_id.`);
+		}
+		tiles[key] = id;
+	}
 
-  return { name, tiles };
+	return { name, tiles };
 }
 
 export function isEmojiPackConfig(value: unknown): value is EmojiPackConfig {
-  if (typeof value !== 'object' || value === null) return false;
-  const config = value as Partial<EmojiPackConfig>;
-  if (typeof config.name !== 'string' || typeof config.tiles !== 'object' || config.tiles === null) return false;
-  return orderedTileKeys().every((key) => typeof config.tiles?.[key] === 'string');
+	if (typeof value !== "object" || value === null) return false;
+	const config = value as Partial<EmojiPackConfig>;
+	if (
+		typeof config.name !== "string" ||
+		typeof config.tiles !== "object" ||
+		config.tiles === null
+	)
+		return false;
+	return orderedTileKeys().every(
+		(key) => typeof config.tiles?.[key] === "string",
+	);
 }
 
-export function packNameCandidates(requestedName: string, botUsername: string): string[] {
-  const name = extractPackName(requestedName);
-  const suffix = `_by_${botUsername}`;
-  if (name.toLowerCase().endsWith(suffix.toLowerCase())) return [name];
+export function packNameCandidates(
+	requestedName: string,
+	botUsername: string,
+): string[] {
+	const name = extractPackName(requestedName);
+	const suffix = `_by_${botUsername}`;
+	if (name.toLowerCase().endsWith(suffix.toLowerCase())) return [name];
 
-  const normalized = buildPackName(name, botUsername);
-  return normalized === name ? [name] : [name, normalized];
+	const normalized = buildPackName(name, botUsername);
+	return normalized === name ? [name] : [name, normalized];
 }
 
-export function normalizeExistingPackName(requestedName: string, botUsername: string): string {
-  return packNameCandidates(requestedName, botUsername)[0];
+export function normalizeExistingPackName(
+	requestedName: string,
+	botUsername: string,
+): string {
+	return packNameCandidates(requestedName, botUsername)[0];
 }
 
-export function renderKeyboardList(game: GameRow, emojiPack: EmojiPackConfig | null): string {
-  const status = keyboardStatus(
-    game.answer,
-    game.guesses.map((g) => g.word)
-  );
+export function renderKeyboardList(
+	game: GameRow,
+	emojiPack: EmojiPackConfig | null,
+): string {
+	const status = keyboardStatus(
+		game.answer,
+		game.guesses.map((g) => g.word),
+	);
 
-  return LANGUAGE_KEY_ROWS[game.language].map((row) => {
-    return row
-      .split('')
-      .flatMap((letter) => {
-        const keyStatus = status.get(letter.toLowerCase()) ?? 'unused';
-        if (keyStatus === 'absent') return [];
-        return [formatKeyboardLetter(letter, keyStatus, emojiPack)];
-      })
-      .join(' ');
-  })
-    .filter(Boolean)
-    .join('\n');
+	return LANGUAGE_KEY_ROWS[game.language]
+		.map((row) => {
+			return row
+				.split("")
+				.flatMap((letter) => {
+					const keyStatus = status.get(letter.toLowerCase()) ?? "unused";
+					if (keyStatus === "absent") return [];
+					return [formatKeyboardLetter(letter, keyStatus, emojiPack)];
+				})
+				.join(" ");
+		})
+		.filter(Boolean)
+		.join("\n");
 }
 
 export function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	return text
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;");
 }
 
-function formatKeyboardLetter(letter: string, status: Exclude<KeyStatus, 'absent'>, emojiPack: EmojiPackConfig | null): string {
-  return formatTileLetter(letter, keyboardColor(status), emojiPack);
+function formatKeyboardLetter(
+	letter: string,
+	status: Exclude<KeyStatus, "absent">,
+	emojiPack: EmojiPackConfig | null,
+): string {
+	return formatTileLetter(letter, keyboardColor(status), emojiPack);
 }
 
-export function formatTileLetter(letter: string, color: TileColor, emojiPack: EmojiPackConfig | null): string {
-  if (emojiPack) {
-    const id = emojiPack.tiles[tileKey(letter, color)];
-    if (id) return `<tg-emoji emoji-id="${id}">${FALLBACK_EMOJI}</tg-emoji>`;
-  }
+export function formatTileLetter(
+	letter: string,
+	color: TileColor,
+	emojiPack: EmojiPackConfig | null,
+): string {
+	if (emojiPack) {
+		const id = emojiPack.tiles[tileKey(letter, color)];
+		if (id) return `<tg-emoji emoji-id="${id}">${FALLBACK_EMOJI}</tg-emoji>`;
+	}
 
-  const upper = letter.toUpperCase();
-  if (color === 'green') return `🟩${upper}`;
-  if (color === 'yellow') return `🟨${upper}`;
-  if (color === 'dark-gray') return `⬛${upper}`;
-  return `◻️${upper}`;
+	const upper = letter.toUpperCase();
+	if (color === "green") return `🟩${upper}`;
+	if (color === "yellow") return `🟨${upper}`;
+	if (color === "dark-gray") return `⬛${upper}`;
+	return `◻️${upper}`;
 }
 
-function keyboardColor(status: Exclude<KeyStatus, 'absent'>): TileColor {
-  if (status === 'correct') return 'green';
-  if (status === 'present') return 'yellow';
-  return 'gray';
+function keyboardColor(status: Exclude<KeyStatus, "absent">): TileColor {
+	if (status === "correct") return "green";
+	if (status === "present") return "yellow";
+	return "gray";
 }
 
 function extractPackName(input: string): string {
-  const match = input.match(/(?:https?:\/\/)?t\.me\/addemoji\/([A-Za-z0-9_]+)/i);
-  return match?.[1] ?? input;
+	const match = input.match(
+		/(?:https?:\/\/)?t\.me\/addemoji\/([A-Za-z0-9_]+)/i,
+	);
+	return match?.[1] ?? input;
 }
 
 function buildPackName(requestedName: string, botUsername: string): string {
-  const suffix = `_by_${botUsername}`;
-  const maxBaseLength = 64 - suffix.length;
-  const base =
-    slugifyPackName(requestedName)
-      .slice(0, maxBaseLength)
-      .replace(/_+$/g, '') || 'pack';
+	const suffix = `_by_${botUsername}`;
+	const maxBaseLength = 64 - suffix.length;
+	const base =
+		slugifyPackName(requestedName)
+			.slice(0, maxBaseLength)
+			.replace(/_+$/g, "") || "pack";
 
-  return `${base}${suffix}`;
+	return `${base}${suffix}`;
 }
 
 function slugifyPackName(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9_]+/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '');
+	const slug = name
+		.toLowerCase()
+		.replace(/[^a-z0-9_]+/g, "_")
+		.replace(/_+/g, "_")
+		.replace(/^_+|_+$/g, "");
 
-  const withLeadingLetter = /^[a-z]/.test(slug) ? slug : `pack_${slug}`;
-  return withLeadingLetter.replace(/_+$/g, '') || 'pack';
+	const withLeadingLetter = /^[a-z]/.test(slug) ? slug : `pack_${slug}`;
+	return withLeadingLetter.replace(/_+$/g, "") || "pack";
 }

@@ -1,20 +1,16 @@
-FROM node:22-slim AS build
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
-COPY tsconfig.json ./
-COPY src ./src
-RUN npm run build
+FROM denoland/deno:2.8.1
 
-FROM node:22-slim AS run
 # A real font is needed for the board/keyboard image rendering.
+USER root
 RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
-ENV NODE_ENV=production
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
-COPY --from=build /app/dist ./dist
-COPY data ./data
 ENV DB_PATH=/data/telewordle.db
+
+COPY deno.json deno.lock ./
+COPY src ./src
+COPY data ./data
+RUN deno cache --lock=deno.lock src/index.ts
+
 VOLUME /data
-CMD ["node", "dist/index.js"]
+CMD ["deno", "task", "start"]

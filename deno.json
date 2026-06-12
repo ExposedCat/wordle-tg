@@ -1,0 +1,20 @@
+{
+	"tasks": {
+		"format": "deno run -A @biomejs/biome format --write; deno run -A @biomejs/biome lint --write",
+		"dev": "./dev.sh",
+		"start": "deno run -INERSW --allow-ffi --unstable-ffi src/index.ts",
+		"check": "deno run -A @biomejs/biome check && deno check -I --unstable-ffi src/index.ts scripts/render-sample.ts",
+		"render:sample": "deno run -INERSW --allow-ffi --unstable-ffi scripts/render-sample.ts"
+	},
+	"imports": {
+		"@biomejs/biome": "npm:@biomejs/biome@2.3.8",
+		"@db/sqlite": "jsr:@db/sqlite@^0.13.0",
+		"@gfx/canvas": "jsr:@gfx/canvas@^0.5.8",
+		"@openai/openai": "jsr:@openai/openai@^6.42.0",
+		"@std/path": "jsr:@std/path@^1.1.2",
+		"grammy": "https://deno.land/x/grammy@v1.43.0/mod.ts"
+	},
+	"compilerOptions": {
+		"strict": true
+	}
+}

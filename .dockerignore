@@ -6,4 +6,7 @@ dist
 .env
 telewordle.db
 telewordle.db-*
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 npm-debug.log*

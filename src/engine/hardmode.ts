@@ -1,15 +1,15 @@
-import { scoreGuess } from './score.js';
+import { scoreGuess } from "./score.ts";
 
-export type HardModeRequiredColor = 'green' | 'yellow';
+export type HardModeRequiredColor = "green" | "yellow";
 
 export interface HardModeRequiredLetter {
-  letter: string;
-  color: HardModeRequiredColor;
+	letter: string;
+	color: HardModeRequiredColor;
 }
 
 export interface HardModeViolation {
-  required: HardModeRequiredLetter[];
-  forbidden: string[];
+	required: HardModeRequiredLetter[];
+	forbidden: string[];
 }
 
 /**
@@ -26,78 +26,81 @@ export interface HardModeViolation {
  * Returns the hint letters involved in a violation, or null if the guess is legal.
  */
 export function hardModeViolation(
-  answer: string,
-  prevGuesses: string[],
-  guess: string,
-  superHard = false
+	answer: string,
+	prevGuesses: string[],
+	guess: string,
+	superHard = false,
 ): HardModeViolation | null {
-  const a = answer.toLowerCase();
-  const g = guess.toLowerCase();
+	const a = answer.toLowerCase();
+	const g = guess.toLowerCase();
 
-  const greenAt = new Map<number, string>(); // position -> required letter
-  const required = new Map<string, number>(); // letter -> min count required
-  const maxAllowed = new Map<string, number>(); // letter -> known exact count in answer
+	const greenAt = new Map<number, string>(); // position -> required letter
+	const required = new Map<string, number>(); // letter -> min count required
+	const maxAllowed = new Map<string, number>(); // letter -> known exact count in answer
 
-  for (const prev of prevGuesses) {
-    const p = prev.toLowerCase();
-    const score = scoreGuess(a, p);
-    const scored = new Map<string, number>(); // correct+present per letter
-    const played = new Map<string, number>(); // total occurrences in this guess
-    for (let i = 0; i < p.length; i++) {
-      played.set(p[i], (played.get(p[i]) ?? 0) + 1);
-      if (score[i] === 'correct') greenAt.set(i, p[i]);
-      if (score[i] === 'correct' || score[i] === 'present') {
-        scored.set(p[i], (scored.get(p[i]) ?? 0) + 1);
-      }
-    }
-    for (const [letter, n] of scored) {
-      if (n > (required.get(letter) ?? 0)) required.set(letter, n);
-    }
-    // played more copies than scored → the answer has exactly `scored` of this letter
-    for (const [letter, n] of played) {
-      const hits = scored.get(letter) ?? 0;
-      if (n > hits) maxAllowed.set(letter, hits);
-    }
-  }
+	for (const prev of prevGuesses) {
+		const p = prev.toLowerCase();
+		const score = scoreGuess(a, p);
+		const scored = new Map<string, number>(); // correct+present per letter
+		const played = new Map<string, number>(); // total occurrences in this guess
+		for (let i = 0; i < p.length; i++) {
+			played.set(p[i], (played.get(p[i]) ?? 0) + 1);
+			if (score[i] === "correct") greenAt.set(i, p[i]);
+			if (score[i] === "correct" || score[i] === "present") {
+				scored.set(p[i], (scored.get(p[i]) ?? 0) + 1);
+			}
+		}
+		for (const [letter, n] of scored) {
+			if (n > (required.get(letter) ?? 0)) required.set(letter, n);
+		}
+		// played more copies than scored → the answer has exactly `scored` of this letter
+		for (const [letter, n] of played) {
+			const hits = scored.get(letter) ?? 0;
+			if (n > hits) maxAllowed.set(letter, hits);
+		}
+	}
 
-  let positiveViolation = false;
-  for (const [pos, letter] of greenAt) {
-    if (g[pos] !== letter) positiveViolation = true;
-  }
-  for (const [letter, n] of required) {
-    if (countLetter(g, letter) < n) positiveViolation = true;
-  }
+	let positiveViolation = false;
+	for (const [pos, letter] of greenAt) {
+		if (g[pos] !== letter) positiveViolation = true;
+	}
+	for (const [letter, n] of required) {
+		if (countLetter(g, letter) < n) positiveViolation = true;
+	}
 
-  const forbidden: string[] = [];
-  if (superHard) {
-    for (const [letter, limit] of maxAllowed) {
-      if (countLetter(g, letter) > limit) forbidden.push(letter.toUpperCase());
-    }
-  }
+	const forbidden: string[] = [];
+	if (superHard) {
+		for (const [letter, limit] of maxAllowed) {
+			if (countLetter(g, letter) > limit) forbidden.push(letter.toUpperCase());
+		}
+	}
 
-  if (!positiveViolation && forbidden.length === 0) return null;
-  return { required: requiredHints(greenAt, required), forbidden };
+	if (!positiveViolation && forbidden.length === 0) return null;
+	return { required: requiredHints(greenAt, required), forbidden };
 }
 
-function requiredHints(greenAt: Map<number, string>, required: Map<string, number>): HardModeRequiredLetter[] {
-  const hints: HardModeRequiredLetter[] = [];
-  const greenCounts = new Map<string, number>();
+function requiredHints(
+	greenAt: Map<number, string>,
+	required: Map<string, number>,
+): HardModeRequiredLetter[] {
+	const hints: HardModeRequiredLetter[] = [];
+	const greenCounts = new Map<string, number>();
 
-  for (const [, letter] of [...greenAt].sort(([a], [b]) => a - b)) {
-    hints.push({ letter: letter.toUpperCase(), color: 'green' });
-    greenCounts.set(letter, (greenCounts.get(letter) ?? 0) + 1);
-  }
+	for (const [, letter] of [...greenAt].sort(([a], [b]) => a - b)) {
+		hints.push({ letter: letter.toUpperCase(), color: "green" });
+		greenCounts.set(letter, (greenCounts.get(letter) ?? 0) + 1);
+	}
 
-  for (const [letter, n] of required) {
-    const yellowCount = n - (greenCounts.get(letter) ?? 0);
-    for (let i = 0; i < yellowCount; i++) {
-      hints.push({ letter: letter.toUpperCase(), color: 'yellow' });
-    }
-  }
+	for (const [letter, n] of required) {
+		const yellowCount = n - (greenCounts.get(letter) ?? 0);
+		for (let i = 0; i < yellowCount; i++) {
+			hints.push({ letter: letter.toUpperCase(), color: "yellow" });
+		}
+	}
 
-  return hints;
+	return hints;
 }
 
 function countLetter(word: string, letter: string): number {
-  return word.split('').filter((c) => c === letter).length;
+	return word.split("").filter((c) => c === letter).length;
 }

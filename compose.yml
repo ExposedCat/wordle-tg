@@ -3,7 +3,6 @@ services:
     build:
       context: .
       dockerfile: Containerfile
-      target: run
     image: telewordle:latest
     container_name: telewordle
     restart: unless-stopped
