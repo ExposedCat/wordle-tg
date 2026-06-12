@@ -427,8 +427,6 @@ export async function handleGuess(
 	const lines: string[] = [];
 
 	async function maybeRoastGuess(): Promise<void> {
-		const roastEnabled = (await chatSettings(chatId)).roast;
-		const belowAverage = isBelowAverageQuality(quality);
 		const logSkip = (reason: string) =>
 			log.debug("Guess roast skipped", {
 				reason,
@@ -438,17 +436,20 @@ export async function handleGuess(
 				quality,
 			});
 
-		if (!belowAverage) return;
-		if (!roastEnabled) {
-			logSkip("roast_disabled");
-			return;
-		}
-		if (!hasOpenAIKey()) {
-			logSkip("missing_openai_key");
-			return;
-		}
-
 		try {
+			const roastEnabled = (await chatSettings(chatId)).roast;
+			const belowAverage = isBelowAverageQuality(quality);
+
+			if (!belowAverage) return;
+			if (!roastEnabled) {
+				logSkip("roast_disabled");
+				return;
+			}
+			if (!hasOpenAIKey()) {
+				logSkip("missing_openai_key");
+				return;
+			}
+
 			const roast = await roastBadGuess({
 				playerName: user.name,
 				word,
@@ -474,6 +475,10 @@ export async function handleGuess(
 				quality,
 			});
 		}
+	}
+
+	function queueRoastGuess(): void {
+		void maybeRoastGuess();
 	}
 
 	const finishedMeaning =
@@ -524,7 +529,7 @@ export async function handleGuess(
 			hideKeyboard: solved,
 			stateChatId,
 		});
-		await maybeRoastGuess();
+		queueRoastGuess();
 
 		if (tournamentEnded) {
 			const winnerNames = winners.map(playerNameLinkHtml).join(" & ");
@@ -610,7 +615,7 @@ export async function handleGuess(
 		hideKeyboard: solved,
 		stateChatId,
 	});
-	await maybeRoastGuess();
+	queueRoastGuess();
 }
 
 export async function setDifficulty(

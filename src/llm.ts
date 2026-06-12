@@ -10,50 +10,53 @@ const SHORT_OUTPUT_TOKENS = 512;
 const ROAST_OUTPUT_TOKENS = 192;
 const ROAST_SEED_LENGTH = 100;
 const ROAST_INSTRUCTIONS = [
-	"Roast this bad Wordle guess: ",
-	"Mock this doomed Wordle guess: ",
-	"Give this awful Wordle guess the roast it earned: ",
-	"Trash this cursed Wordle guess: ",
-	"Roast the player for choosing this Wordle guess: ",
-	"Make fun of this bad Wordle guess: ",
-	"Skewer this miserable Wordle guess: ",
-	"Drag this Wordle guess through the group chat: ",
-	"Write a sharp roast for this Wordle guess: ",
-	"Call out this terrible Wordle guess: ",
-	"Give a sarcastic jab for this Wordle guess: ",
-	"Punish this weak Wordle guess with one roast: ",
+	"Roast this bad Wordle guess with one nasty line: ",
+	"Mock the player for choosing this Wordle guess: ",
+	"Give this pathetic Wordle choice the roast it earned: ",
+	"Drag the player for making this Wordle guess: ",
+	"Write a vicious group-chat roast for this Wordle guess: ",
+	"Call out the awful thought process behind this Wordle guess: ",
+	"Skewer the confidence behind this Wordle guess: ",
+	"Give one cruel sarcastic roast for this bad Wordle guess: ",
 ] as const;
 const ROAST_RULES = [
-	"Use nasty, sarcastic, dark savvy humor. Not boring, flat schoolyard humor, but a serious, sharp roasting.",
+	"Use the guessed word as a hook only when it makes the insult sharper; never force cute puns or dictionary jokes.",
+	"Use nasty adult group-chat sarcasm: cruel, savvy, profane, and personal.",
+	"Strong profanity is allowed; slurs, hate, and threats are not.",
 	"Reply in the same language/alphabet as the guessed word.",
 	"Exactly one short sentence.",
-	"Joke must be sarcastic, non-flat, and not too obvious. It must be deep and smart, and it must roast the guesser.",
-	"You are strictly unallowed to use analogies or comparisons.",
+	"Avoid whimsy, softened insults, rhymes, random metaphors, and schoolyard punchlines.",
+	"Make the roast about wasted confidence, bad instincts, shallow thinking, or a fake strategy collapsing.",
+	"It should feel like a mean Telegram reply from a clever friend, not edgy shock bait from an assistant.",
 	"Do not mention scores, numbers, possible words, remaining words, averages, or quality.",
 ] as const;
 const EN_ROAST_EXAMPLES = [
-	`"CRANE" -> "CRANE spent all that confidence and bought nothing."`,
-	`"SLATE" -> "SLATE says you wanted strategy but settled for posture."`,
-	`"AUDIO" -> "AUDIO announced that you discovered vowels and stopped thinking."`,
-	`"RAISE" -> "RAISE was brave in the way bad decisions enjoy being witnessed."`,
-	`"PLANT" -> "PLANT really committed to wasting everyone's emotional bandwidth."`,
-	`"HOUSE" -> "HOUSE is what happens when your instincts clock out early."`,
-	`"MONEY" -> "MONEY brought financial-crisis judgment to a five-letter problem."`,
-	`"LIGHT" -> "LIGHT was impressively dim for something trying so hard."`,
-	`"TRAIN" -> "TRAIN arrived late to the thought process and still derailed it."`,
-	`"BREAD" -> "BREAD has the tragic confidence of a guess that learned nothing."`,
+	`"SPINE" -> "Maybe grow one before making another guess this fucking useless."`,
+	`"CHALK" -> "That word is so basic it makes your whole thought process look like complete shit."`,
+	`"TRUMP" -> "Of all the dumb bullshit you could drag into Wordle, you chose the one that makes you look loud and lost."`,
+	`"CRANE" -> "You used the default nerd opener and still made it look like you fucked it up on purpose."`,
+	`"SLATE" -> "That is not strategy, that is copying confident people while understanding absolutely fuck-all."`,
+	`"AUDIO" -> "You picked vowels like a lazy dumbass and expected everyone to call it tactics."`,
+	`"RAISE" -> "Nothing says empty confidence like making a lazy-ass guess and waiting for the game to respect it."`,
+	`"PLANT" -> "You planted that guess and proved your decision-making grows nothing but bullshit."`,
+	`"HOUSE" -> "That guess makes your instincts look like they were assembled from leftover shit."`,
+	`"MONEY" -> "You spent a turn like someone who is somehow dogshit at both budgeting and thinking."`,
+	`"LIGHT" -> "There is nothing bright about picking that and pretending it was a fucking plan."`,
+	`"BREAD" -> "That was stale enough to make everyone wonder why the fuck you were allowed near the board."`,
 ] as const;
 const RU_ROAST_EXAMPLES = [
-	`"МОРЕ" -> "МОРЕ выглядело уверенно, пока не стало ясно, что думать ты не начинал(a)."`,
-	`"СТОЛ" -> "СТОЛ принес в чат ту самую тишину, после которой стыдно всем."`,
-	`"ВЕТЕР" -> "ВЕТЕР был резким напоминанием, что интуиция тоже умеет увольняться."`,
-	`"КОШКА" -> "КОШКА пришла с таким апломбом, будто провал заранее забронировали."`,
-	`"СЛОВО" -> "СЛОВО звучит так, будто мысль застряла еще на заставке."`,
-	`"КНИГА" -> "КНИГА доказала, что чтение не всегда оставляет следы."`,
-	`"ПОЛЕ" -> "ПОЛЕ оставило после себя пространство, где могла быть идея."`,
-	`"ДОЖДЬ" -> "ДОЖДЬ промочил не игру, а остатки твоей репутации."`,
-	`"ЗВУК" -> "ЗВУК был громким только в своей бесполезности."`,
-	`"КАРТА" -> "КАРТА явно не помогла, потому что ты заблудился еще до хода."`,
+	`"МОРЕ" -> "С таким ходом тебе лучше молча утонуть, пока чат не заметил, насколько все проебано."`,
+	`"СТОЛ" -> "Ты положил это на стол так уверенно, будто хуевая идея уже считается стратегией."`,
+	`"ВЕТЕР" -> "В голове явно ветер, потому что нормальная мысль там бы нихуя не выжила."`,
+	`"КОШКА" -> "Даже случайный тык по клавиатуре выглядел бы менее жалко, чем эта хуйня."`,
+	`"СЛОВО" -> "Это не ход, а признание, что думать сегодня было слишком дохуя работы."`,
+	`"КНИГА" -> "Если ты так читаешь доску, блядь, страшно представить, как ты читаешь предложения."`,
+	`"ПОЛЕ" -> "Ты посеял плохую идею и почему-то ждал, что из этой хуйни вырастет мозг."`,
+	`"ДОЖДЬ" -> "Этот ход смыл не варианты, а последние причины уважать твою ебаную интуицию."`,
+	`"ЗВУК" -> "Громко было только от того, как твоя стратегия ебнулась лицом вниз."`,
+	`"КАРТА" -> "С такой картой ты бы заблудился даже в собственном жалком оправдании."`,
+	`"ДЕНЬГИ" -> "Ты вложился в этот ход так, будто банкротство мышления было ебаной целью."`,
+	`"СВЕТ" -> "Для слова про свет ход получился слишком верным темноте в твоей, блядь, голове."`,
 ] as const;
 const RANDOM_SEED_ALPHABET =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -102,15 +105,25 @@ function roastExamplesForWord(word: string): readonly string[] {
 	return /[А-Яа-яЁё]/.test(word) ? RU_ROAST_EXAMPLES : EN_ROAST_EXAMPLES;
 }
 
-function buildRoastPrompt(word: string): string {
+function buildRoastPrompt(input: {
+	word: string;
+	possibleCount: number;
+	actualRemaining: number;
+	averageRemaining: number;
+}): string {
 	const instruction = ROAST_INSTRUCTIONS[randomInt(ROAST_INSTRUCTIONS.length)];
 	const rules = shuffled(ROAST_RULES)
 		.map((rule) => `- ${rule}`)
 		.join("\n");
-	const examples = sample(roastExamplesForWord(word), 3).join("\n");
+	const examples = sample(roastExamplesForWord(input.word), 3).join("\n");
 
 	return `Seed: ${randomSeed()}
-${instruction}${word}
+${instruction}${input.word}
+
+Private game context, for tone only:
+- Possible words before the guess: ${input.possibleCount}
+- Words left after the guess: ${input.actualRemaining}
+- Expected words left for an average guess: ${input.averageRemaining}
 
 Rules:
 ${rules}
@@ -303,7 +316,12 @@ export async function roastBadGuess(input: {
 		actualRemaining: input.actualRemaining,
 		averageRemaining: input.averageRemaining,
 	});
-	const prompt = buildRoastPrompt(word);
+	const prompt = buildRoastPrompt({
+		word,
+		possibleCount: input.possibleCount,
+		actualRemaining: input.actualRemaining,
+		averageRemaining: input.averageRemaining,
+	});
 	const response = await openai.responses.create({
 		...shortResponseOptions(ROAST_OUTPUT_TOKENS),
 		instructions:

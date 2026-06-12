@@ -17,6 +17,7 @@ import {
 	setLanguage,
 	setWordLength,
 } from "../bot/handlers.ts";
+import { threadOptions } from "../bot/telegram.ts";
 import { parseWordTarget } from "../bot/word-target.ts";
 import type { Context } from "../bot.ts";
 import {
@@ -25,8 +26,10 @@ import {
 } from "../game/emoji-pack.ts";
 import { saveSettings, settings } from "../game.ts";
 import { roastBadGuess } from "../llm.ts";
+import { createLogger } from "../log.ts";
 
 export const preferenceComposer = new Composer<Context>();
+const log = createLogger("bot:preferences");
 
 preferenceComposer.command("help", (context) => replyHelp(context));
 
@@ -73,25 +76,47 @@ preferenceComposer.command("roast", async (context) => {
 	if (argument || reply) {
 		if (!target) return void (await context.text("game.roastUsage"));
 
-		const roast = await roastBadGuess({
-			playerName: context.from?.first_name ?? "Player",
-			word: target.word,
-			possibleCount: 0,
-			actualRemaining: 0,
-			averageRemaining: 0,
+		const api = context.api;
+		const chatId = context.chat.id;
+		const word = target.word;
+		const playerName = context.from?.first_name ?? "Player";
+		const unavailableText = context.t("game.roastUnavailable", {
+			word: word.toUpperCase(),
 		});
-		if (!roast) {
-			return void (await context.text("game.roastUnavailable", {
-				word: target.word.toUpperCase(),
-			}));
-		}
-
-		await context.reply(
-			roast,
+		const baseOptions = threadOptions(context);
+		const roastOptions =
 			replyTarget && reply
-				? { reply_parameters: { message_id: reply.message_id } }
-				: undefined,
-		);
+				? {
+						...baseOptions,
+						reply_parameters: { message_id: reply.message_id },
+					}
+				: baseOptions;
+
+		void (async () => {
+			try {
+				const roast = await roastBadGuess({
+					playerName,
+					word,
+					possibleCount: 0,
+					actualRemaining: 0,
+					averageRemaining: 0,
+				});
+				await api.sendMessage(
+					chatId,
+					roast ?? unavailableText,
+					roast ? roastOptions : baseOptions,
+				);
+			} catch (error) {
+				log.error("Failed to generate requested roast", {
+					error,
+					chatId,
+					word: word.toUpperCase(),
+				});
+				await api
+					.sendMessage(chatId, unavailableText, baseOptions)
+					.catch(() => {});
+			}
+		})();
 		return;
 	}
 

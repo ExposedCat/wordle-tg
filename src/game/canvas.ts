@@ -1,4 +1,4 @@
-import { type Canvas, type CanvasRenderingContext2D, Fonts } from "@gfx/canvas";
+import type { Canvas, CanvasRenderingContext2D } from "@gfx/canvas";
 
 export const COLORS = {
 	bg: "#121213",
@@ -14,59 +14,10 @@ export const COLORS = {
 	panel2: "#2f3033",
 };
 
-const FONT_FAMILY = "NYT-Franklin";
-const FONT_ASSET_DIR = new URL("../../assets/fonts/", import.meta.url);
-const FONT_ASSET_PATTERN = /^NYT[-_ ]?Franklin.*\.(otf|ttf|woff2?)$/i;
-const FALLBACK_FONT_FAMILIES = ["DejaVu Sans", "Arial", "Liberation Sans"];
-
-export const FONT = fontValue(selectFontFamily());
+export const FONT = '"DejaVu Sans", sans-serif';
 export const STICKER_WIDTH = 512;
 export const STICKER_HEIGHT = 512;
 export const WEBP_QUALITY = 100;
-
-function selectFontFamily(): string {
-	if (registerFont(FONT_FAMILY) || aliasInstalledFont(FONT_FAMILY)) {
-		return FONT_FAMILY;
-	}
-	return FALLBACK_FONT_FAMILIES.find(hasFontFamily) ?? "sans-serif";
-}
-
-function registerFont(alias: string): boolean {
-	try {
-		for (const entry of Deno.readDirSync(FONT_ASSET_DIR)) {
-			if (!entry.isFile || !FONT_ASSET_PATTERN.test(entry.name)) continue;
-			Fonts.register(
-				Deno.readFileSync(new URL(entry.name, FONT_ASSET_DIR)),
-				alias,
-			);
-			return true;
-		}
-	} catch {
-		// Fall back to the system font collection when the bundled asset is absent.
-	}
-	return false;
-}
-
-function aliasInstalledFont(alias: string): boolean {
-	const installedFamily = Fonts.families.find(
-		(family) => normalizeFontFamily(family) === normalizeFontFamily(alias),
-	);
-	if (!installedFamily) return false;
-	if (installedFamily !== alias) Fonts.setAlias(alias, installedFamily);
-	return true;
-}
-
-function hasFontFamily(family: string): boolean {
-	return Fonts.families.some((installed) => installed === family);
-}
-
-function fontValue(family: string): string {
-	return family.includes(" ") ? `"${family}"` : family;
-}
-
-function normalizeFontFamily(family: string): string {
-	return family.toLowerCase().replaceAll(/[-_\s]+/g, "");
-}
 
 export function encodeSticker(canvas: Canvas): Uint8Array {
 	return canvas.encode("webp", WEBP_QUALITY);
