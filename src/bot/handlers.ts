@@ -95,7 +95,7 @@ export function boardMessageIdsForCleanup(
 	game: Pick<GameRow, "status">,
 	messageIds: number[],
 ): number[] {
-	return game.status === "solved" ? [] : messageIds;
+	return game.status === "active" ? messageIds : [];
 }
 
 function isBelowAverageQuality(
@@ -627,9 +627,9 @@ export async function setLanguage(
 	const active = await activeGame(chatId);
 	const suffix =
 		active && active.language !== language
-			? context.t("preferences.currentGameLanguage", {
+			? `\n${context.t("preferences.currentGameLanguage", {
 					language: LANGUAGE_LABELS[active.language],
-				})
+				})}`
 			: "";
 	await context.text("preferences.languageSelected", {
 		language: LANGUAGE_LABELS[language],
@@ -650,9 +650,9 @@ export async function setWordLength(context: Context): Promise<void> {
 	const active = await activeGame(chatId);
 	const suffix =
 		active && active.answer.length !== length
-			? context.t("preferences.currentGameLength", {
+			? `\n${context.t("preferences.currentGameLength", {
 					length: active.answer.length,
-				})
+				})}`
 			: "";
 	await context.text("preferences.lengthSet", { length, suffix });
 }
