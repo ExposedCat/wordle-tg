@@ -21,7 +21,7 @@ export interface CreativitySettings {
 	count: number;
 }
 
-export type Difficulty = "normal" | "hard" | "superhard";
+export type Difficulty = "normal" | "hard" | "superhard" | "megahard";
 export type OneshotDifficulty = "easy" | "normal" | "hard" | "expert";
 
 export interface ChatSettings {

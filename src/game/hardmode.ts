@@ -10,6 +10,7 @@ export interface HardModeRequiredLetter {
 export interface HardModeViolation {
 	required: HardModeRequiredLetter[];
 	forbidden: string[];
+	misplaced: HardModeRequiredLetter[];
 }
 
 /**
@@ -23,6 +24,9 @@ export interface HardModeViolation {
  *  - if a previous guess revealed the answer holds exactly N of a letter
  *    (extra copies came back gray), you may not play more than N of it
  *
+ * Mega hard mode includes super hard rules and additionally bans putting a
+ * yellow letter back in any position where it was previously yellow.
+ *
  * Returns the hint letters involved in a violation, or null if the guess is legal.
  */
 export function hardModeViolation(
@@ -30,11 +34,13 @@ export function hardModeViolation(
 	prevGuesses: string[],
 	guess: string,
 	superHard = false,
+	megaHard = false,
 ): HardModeViolation | null {
 	const a = answer.toLowerCase();
 	const g = guess.toLowerCase();
 
 	const greenAt = new Map<number, string>(); // position -> required letter
+	const yellowAt = new Map<number, Set<string>>(); // position -> letters known not to fit there
 	const required = new Map<string, number>(); // letter -> min count required
 	const maxAllowed = new Map<string, number>(); // letter -> known exact count in answer
 
@@ -46,6 +52,11 @@ export function hardModeViolation(
 		for (let i = 0; i < p.length; i++) {
 			played.set(p[i], (played.get(p[i]) ?? 0) + 1);
 			if (score[i] === "correct") greenAt.set(i, p[i]);
+			if (score[i] === "present") {
+				const letters = yellowAt.get(i) ?? new Set<string>();
+				letters.add(p[i]);
+				yellowAt.set(i, letters);
+			}
 			if (score[i] === "correct" || score[i] === "present") {
 				scored.set(p[i], (scored.get(p[i]) ?? 0) + 1);
 			}
@@ -75,8 +86,24 @@ export function hardModeViolation(
 		}
 	}
 
-	if (!positiveViolation && forbidden.length === 0) return null;
-	return { required: requiredHints(greenAt, required), forbidden };
+	const misplaced: HardModeRequiredLetter[] = [];
+	if (megaHard) {
+		for (const [pos, letters] of yellowAt) {
+			const letter = g[pos];
+			if (letters.has(letter)) {
+				misplaced.push({ letter: letter.toUpperCase(), color: "yellow" });
+			}
+		}
+	}
+
+	if (!positiveViolation && forbidden.length === 0 && misplaced.length === 0) {
+		return null;
+	}
+	return {
+		required: positiveViolation ? requiredHints(greenAt, required) : [],
+		forbidden,
+		misplaced,
+	};
 }
 
 function requiredHints(

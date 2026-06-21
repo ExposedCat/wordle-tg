@@ -227,6 +227,9 @@ preferenceComposer.command("hard", async (context) =>
 preferenceComposer.command("superhard", async (context) =>
 	setDifficulty(context, "superhard"),
 );
+preferenceComposer.command("megahard", async (context) =>
+	setDifficulty(context, "megahard"),
+);
 
 preferenceComposer.command("wordle_help", async (context) =>
 	context.text("help.wordle"),

@@ -22,6 +22,7 @@ export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
 	normal: defaultText("partial.difficultyNormal"),
 	hard: defaultText("partial.difficultyHard"),
 	superhard: defaultText("partial.difficultySuperhard"),
+	megahard: defaultText("partial.difficultyMegahard"),
 };
 
 export const ONESHOT_DIFFICULTY_LABEL: Record<OneshotDifficulty, string> = {
@@ -143,29 +144,42 @@ export function modeHelpText(
 		normalTick: tick(chatSettings.difficulty === "normal"),
 		hardTick: tick(chatSettings.difficulty === "hard"),
 		superhardTick: tick(chatSettings.difficulty === "superhard"),
+		megahardTick: tick(chatSettings.difficulty === "megahard"),
 	});
 }
 
 export function hardModeViolationText(
 	translate: TranslateFunction,
 	violation: HardModeViolation,
-	superHard: boolean,
+	difficulty: Difficulty,
 	emojiPack: EmojiPackConfig | null,
 ): string {
-	const mode = superHard
-		? translate("partial.superhard")
-		: translate("partial.hard");
+	const mode =
+		difficulty === "megahard"
+			? translate("partial.megahard")
+			: difficulty === "superhard"
+				? translate("partial.superhard")
+				: translate("partial.hard");
 	const required = violation.required
 		.map((hint) => formatTileLetter(hint.letter, hint.color, emojiPack))
 		.join(" ");
 	const forbidden = violation.forbidden
 		.map((letter) => formatTileLetter(letter, "dark-gray", emojiPack))
 		.join(" ");
+	const misplaced = violation.misplaced
+		.map((hint) => formatTileLetter(hint.letter, hint.color, emojiPack))
+		.join(" ");
+	const misplacedSuffix = misplaced
+		? `\n${translate("format.hardModeMisplacedSuffix", { misplaced })}`
+		: "";
 
 	if (required && forbidden)
-		return translate("format.hardModeBoth", { mode, required, forbidden });
-	if (required) return translate("format.hardModeRequired", { mode, required });
-	return translate("format.hardModeForbidden", { mode, forbidden });
+		return `${translate("format.hardModeBoth", { mode, required, forbidden })}${misplacedSuffix}`;
+	if (required)
+		return `${translate("format.hardModeRequired", { mode, required })}${misplacedSuffix}`;
+	if (forbidden)
+		return `${translate("format.hardModeForbidden", { mode, forbidden })}${misplacedSuffix}`;
+	return translate("format.hardModeMisplaced", { mode, misplaced });
 }
 
 export function alreadyGuessedText(

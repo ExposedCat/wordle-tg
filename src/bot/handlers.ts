@@ -1,5 +1,5 @@
 import { type Bot, InputFile } from "grammy";
-import type { GameRow, TournamentRow } from "../app/data.ts";
+import type { Difficulty, GameRow, TournamentRow } from "../app/data.ts";
 import type { Context } from "../bot.ts";
 import {
 	renderBoardSticker,
@@ -403,7 +403,7 @@ export async function handleGuess(
 			return;
 		case "hard_mode_violation":
 			await context.reply(
-				`${hardModeViolationText(context.t, guessResult.violation, guessResult.superHard, (await chatSettings(stateChatId)).emojiPack)}${tournamentRejectStatusHtml(guessResult.rejectStatus)}`,
+				`${hardModeViolationText(context.t, guessResult.violation, guessResult.difficulty, (await chatSettings(stateChatId)).emojiPack)}${tournamentRejectStatusHtml(guessResult.rejectStatus)}`,
 				{
 					parse_mode: "HTML",
 				},
@@ -570,7 +570,7 @@ export async function handleGuess(
 
 export async function setDifficulty(
 	context: Context,
-	difficulty: "normal" | "hard" | "superhard",
+	difficulty: Difficulty,
 ): Promise<void> {
 	const chatId = context.chat!.id;
 	const currentSettings = await chatSettings(chatId);
@@ -580,6 +580,7 @@ export async function setDifficulty(
 		normal: context.t("partial.normal"),
 		hard: context.t("partial.difficultyHardLabel"),
 		superhard: context.t("partial.difficultySuperhardLabel"),
+		megahard: context.t("partial.difficultyMegahardLabel"),
 	};
 	await context.text("preferences.difficultySet", {
 		label: labels[difficulty],

@@ -3,6 +3,7 @@ import {
 	createGame,
 	createTournament,
 	type Database,
+	type Difficulty,
 	findStatsByName,
 	type GameRow,
 	type GuessEntry,
@@ -147,7 +148,7 @@ export type GuessOutcome =
 			type: "hard_mode_violation";
 			word: string;
 			violation: HardModeViolation;
-			superHard: boolean;
+			difficulty: Difficulty;
 			rejectStatus?: TournamentRejectStatus;
 	  }
 	| { type: "already_guessed"; word: string }
@@ -628,14 +629,18 @@ export class GameService {
 			};
 		}
 
-		// hard / super hard mode: all revealed hints must be used
+		// hard and stricter modes: all revealed hints must be used
 		if (!isOneshot && settings.difficulty !== "normal") {
-			const superHard = settings.difficulty === "superhard";
+			const superHard =
+				settings.difficulty === "superhard" ||
+				settings.difficulty === "megahard";
+			const megaHard = settings.difficulty === "megahard";
 			const violation = hardModeViolation(
 				game.answer,
 				game.guesses.map((g) => g.word),
 				word,
 				superHard,
+				megaHard,
 			);
 			if (violation) {
 				log.debug("Guess rejected by hard mode", {
@@ -650,7 +655,7 @@ export class GameService {
 					type: "hard_mode_violation",
 					word,
 					violation,
-					superHard,
+					difficulty: settings.difficulty,
 					rejectStatus: await tournamentReject(),
 				};
 			}

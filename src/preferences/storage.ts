@@ -37,9 +37,17 @@ export async function getSettings(
 		parsed.oneshotDifficulty === "expert"
 			? parsed.oneshotDifficulty
 			: DEFAULT_SETTINGS.oneshotDifficulty;
+	const difficulty =
+		parsed.difficulty === "normal" ||
+		parsed.difficulty === "hard" ||
+		parsed.difficulty === "superhard" ||
+		parsed.difficulty === "megahard"
+			? parsed.difficulty
+			: DEFAULT_SETTINGS.difficulty;
 	return {
 		...structuredClone(DEFAULT_SETTINGS),
 		...parsed,
+		difficulty,
 		language: isWordLanguage(parsed.language)
 			? parsed.language
 			: DEFAULT_SETTINGS.language,

@@ -48,6 +48,7 @@ export const COMMANDS = [
 	{ command: "normal", description: defaultText("command.normal") },
 	{ command: "hard", description: defaultText("command.hard") },
 	{ command: "superhard", description: defaultText("command.superhard") },
+	{ command: "megahard", description: defaultText("command.megahard") },
 	{ command: "mode_help", description: defaultText("command.mode_help") },
 	{
 		command: "creativity_help",

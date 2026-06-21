@@ -21,6 +21,7 @@ command =
     .normal = Set normal mode
     .hard = Set hard mode
     .superhard = Set super hard mode
+    .megahard = Set mega hard mode
     .mode_help = Mode details
     .creativity_help = Creativity details
     .settings = Chat settings
@@ -43,11 +44,14 @@ partial =
     .normal = Normal
     .hard = Hard
     .superhard = Super-hard
+    .megahard = Mega-hard
     .difficultyNormal = 😎 normal
     .difficultyHard = 😤 hard
     .difficultySuperhard = 🔥 super hard
+    .difficultyMegahard = 💀 mega hard
     .difficultyHardLabel = <tg-emoji emoji-id="5282832726385268445">🔠</tg-emoji> Hard
     .difficultySuperhardLabel = <tg-emoji emoji-id="5282737683053980256">🔠</tg-emoji> Super-hard
+    .difficultyMegahardLabel = <tg-emoji emoji-id="5897962422169243693">💀</tg-emoji> Mega-hard
     .oneshotEasy = easy
     .oneshotNormal = normal
     .oneshotHard = hard
@@ -223,6 +227,9 @@ help =
         
         Super-hard /superhard{ $superhardTick }
         Hard, but <tg-emoji emoji-id="5282737683053980256">🔠</tg-emoji> dark hints cannot be used.
+        
+        Mega-hard /megahard{ $megahardTick }
+        Super-hard, but <tg-emoji emoji-id="5280718893806034581">🔠</tg-emoji> yellow letters cannot be repeated in the same positions.
     .creativity = <tg-emoji emoji-id="5877410604225924969">✨</tg-emoji> Creativity
         
         /creativity · { $value } { $toggleIcon }
@@ -292,6 +299,8 @@ format =
         You cannot use { $forbidden }
     .hardModeRequired = { $mode }: you must use { $required }
     .hardModeForbidden = { $mode }: you cannot use { $forbidden }
+    .hardModeMisplaced = { $mode }: move { $misplaced } out of previous yellow positions
+    .hardModeMisplacedSuffix = You cannot repeat yellow positions: { $misplaced }
     .alreadyGuessed = { $tiles } was already guessed
     .gameOver = <tg-emoji emoji-id="5927054181285237634">🏳️</tg-emoji> Game Over! The word was { $answer }
     .answerMeaning = { $answer }{ $meaning }
